@@ -1,0 +1,94 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "github-ops-manager"
+version = "0.1.0"
+description = "A flexible and robust Python tool to automate common GitHub workflows based on declarative configuration files (YAML)."
+authors = [
+    {name = "Andrea Testino", email = "atestini@cisco.com"},
+]
+readme = "README.md"
+requires-python = "==3.11.11"
+license = {text = "Cisco Sample Code License, Version 1.1"} # Or choose appropriate license
+
+dependencies = [
+    # Core Functionality
+    "ruamel.yaml>=0.18,<0.19",       # For YAML processing (preserving comments)
+    "pydantic>=2.0,<3.0",          # For data modeling and validation
+    "githubkit>=0.12.12",         # For GitHub API interactions (supports App & PAT)
+    "typer[all]>=0.9,<1.0",        # For CLI framework (using typer with optional deps)
+    "pydantic>=2.11,<3.0",      # For data modeling (output UC schema)
+    "pydantic-settings~=2.9.1",  # For loading config from .env/env vars
+    "structlog~=25.2.0",         # For structured logging
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.1.1",
+    "ruff>=0.4.4",
+    "pytest-mock>=3.14",
+    "pre-commit>=3.8.0",
+    "python-dotenv>=1.0,<2.0", # For loading .env files during development
+]
+docs = [
+    "mkdocs>=1.5.3",
+    "mkdocs-material>=9.5.11",
+    "mkdocs-git-authors-plugin>=0.7.0",
+    "mkdocs-git-revision-date-localized-plugin>=1.2.0",
+]
+
+[project.urls]
+"Homepage" = "https://wwwin-github.cisco.com/atestini/digitized-delivery-nac-use-case-converter.git"
+"Bug Tracker" = "https://wwwin-github.cisco.com/atestini/digitized-delivery-nac-use-case-converter.git/issues"
+
+[project.scripts]
+# placeholder-script = "github_ops_manager.cli:app" # Placeholder as requested
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/github_ops_manager"] # Placeholder as requested, assuming src layout
+
+[tool.uv]
+# uv-specific configuration (if any)
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = "test_*.py"
+
+[tool.ruff]
+line-length = 150
+target-version = "py311"
+
+[tool.ruff.lint]
+select = [
+    "E",  # pycodestyle errors
+    "F",  # pyflakes
+    "I",  # isort
+    "B",  # flake8-bugbear
+    "W",  # pycodestyle warnings
+    "C90",# flake8-mccabe complexity
+    "N",  # pep8-naming
+    "UP", # pyupgrade
+    "ANN",# flake8-annotations
+    "D",  # pydocstyle
+    "T",  # flake8-print (includes T201 for pdb, replacing debug-statements hook)
+]
+ignore = [
+    "D203", # Conflicts with D212 (Google convention prefers D212 style)
+    "D200", # One-line docstring should fit on one line with quotes
+    "B008", # Do not perform function calls in argument defaults (sometimes needed)
+    "N805", # Error message arguments should be capitalized
+    "ANN401",# Dynamically typed expressions (Any) are disallowed in type annotations
+    "C901", # Function is too complex
+    "UP006", # Use 'list' instead of 'List' (etc for typing)
+    "UP035", # Use `import collections.abc`
+    ]
+
+#[tool.ruff.lint.per-file-ignores]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.lint.isort]
+combine-as-imports = true
