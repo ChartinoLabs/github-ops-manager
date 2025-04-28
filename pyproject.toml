@@ -85,7 +85,8 @@ ignore = [
     "UP035", # Use `import collections.abc`
     ]
 
-#[tool.ruff.lint.per-file-ignores]
+[tool.ruff.lint.per-file-ignores]
+"github_ops_manager/_legacy/*" = ["E", "F", "I", "B", "W", "C90", "N", "UP", "ANN", "D", "T"]
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"

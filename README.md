@@ -106,6 +106,37 @@ The `github-ops-manager` tool must fulfill the following core requirements:
     * Include docstrings for public modules, classes, and functions.
     * Provide example YAML input files and example configuration snippets.
 
+## Development Practices and Utilities
+
+To ensure a high-quality, maintainable, and consistent codebase, this project should adhere to standard Python best practices, leveraging a central `utils` package (`github_ops_manager/utils/`) for shared components inspired by the reference files provided:
+
+* **Configuration Management (`utils/config.py`):**
+  * Utilize Pydantic's `BaseSettings` to define and load application configuration (like API settings, feature flags, default paths) in a type-safe manner.
+  * Support loading configuration from environment variables and `.env` files.
+  * Organize settings into logical classes (e.g., `GitHubSettings`, `AppSettings`).
+
+* **Constants (`utils/constants.py`):**
+  * Define shared, immutable values (like default filenames, mapping dictionaries, regex patterns, API endpoints fragments) in a dedicated `constants.py` module to avoid magic strings/numbers and improve maintainability.
+
+* **Type Hinting (`utils/typings.py`):**
+  * Use Python's type hinting features (`typing` module) extensively throughout the codebase for clarity and static analysis benefits.
+  * Define shared custom types, such as `TypedDict` for specific data structures or `Enum` for controlled vocabularies (like issue labels or states), in `typings.py`.
+
+* **Custom Exceptions (`utils/exceptions.py`):**
+  * Define a hierarchy of custom exception classes, potentially inheriting from a base `GitHubOpsManagerError`, in `exceptions.py`. This allows for more specific error handling and categorization (e.g., `ConfigurationError`, `GitHubApiError`, `YamlProcessingError`).
+
+* **Structured Logging (`utils/logging.py`):**
+  * Implement structured logging using libraries like `structlog` wrapping the standard `logging` module.
+  * Configure logging centrally to include timestamps, log levels, logger names, and potentially contextual information.
+  * Support configurable log levels (e.g., INFO, DEBUG) via environment variables or CLI flags.
+  * Allow JSON output for easier parsing by log collectors, in addition to console-friendly formats.
+  * Consider silencing overly verbose logs from third-party libraries (like `httpx`, `githubkit` itself if needed) at the WARNING level.
+
+* **Helper Functions (`utils/helpers.py`):**
+  * Place general-purpose, reusable utility functions (e.g., file system operations, string manipulation, ID generation, date handling) that don't belong to a more specific module into `helpers.py`.
+
+Adhering to these practices will contribute significantly to the project's long-term health and ease of collaboration.
+
 ## Suggested Core Libraries
 
 * **GitHub Interaction:** [`githubkit`](https://github.com/yanyongyu/githubkit) - Modern, typed, supports both GitHub App and PAT authentication.
@@ -148,7 +179,14 @@ github-ops-manager/
 │   ├── schemas/            # Pydantic models for input validation
 │   │   ├── __init__.py
 │   │   └── default_issue.py # Schema for the default expected YAML issue structure
-│   └── utils.py            # Common helper functions (logging setup, etc.)
+│   ├── utils/            
+│   │   ├── __init__.py
+│   │   ├── constants.py              # Shared constants
+│   │   ├── helpers.py                # Utility functions
+│   │   ├── typings.py                # Shared type definitions
+│   │   ├── config.py                   # Pydantic Settings model for configuration
+│   │   ├── exceptions.py               # Custom exception classes
+│   │   ├── logging.py                  # Structlog setup
 ├── tests/                  # Unit and integration tests
 │   ├── __init__.py
 │   ├── fixtures/           # Test data, mock responses
