@@ -8,6 +8,7 @@ version = "0.1.0"
 description = "A flexible and robust Python tool to automate common GitHub workflows based on declarative configuration files (YAML)."
 authors = [
     {name = "Andrea Testino", email = "atestini@cisco.com"},
+    {name = "Christopher Hart", email = "chart2@cisco.com"}
 ]
 readme = "README.md"
 requires-python = "==3.11.11"
@@ -40,8 +41,8 @@ docs = [
 ]
 
 [project.urls]
-"Homepage" = "https://wwwin-github.cisco.com/atestini/digitized-delivery-nac-use-case-converter.git"
-"Bug Tracker" = "https://wwwin-github.cisco.com/atestini/digitized-delivery-nac-use-case-converter.git/issues"
+"Homepage" = "https://github.com/aitestino/github-ops-manager.git"
+"Bug Tracker" = "https://github.com/aitestino/github-ops-manager.git/issues"
 
 [project.scripts]
 # placeholder-script = "github_ops_manager.cli:app" # Placeholder as requested
