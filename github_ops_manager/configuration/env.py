@@ -19,6 +19,7 @@ class Settings(BaseSettings):
 
     # GitHub API settings
     GITHUB_API_URL: str = "https://api.github.com"
+    REPO: str | None = None
 
     # GitHub PAT settings
     GITHUB_PAT_TOKEN: str | None = None

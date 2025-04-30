@@ -1,7 +1,7 @@
 #!/usr/bin/env -S uv run --script
 """GitHub Ops Manager CLI entry point."""
 
-from github_ops_manager.cli import typer_app
+from github_ops_manager.configuration.cli import typer_app
 
 if __name__ == "__main__":
     typer_app()

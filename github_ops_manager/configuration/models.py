@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 from enum import Enum
+from pathlib import Path
 
 
 class GitHubAuthenticationType(str, Enum):
@@ -20,7 +21,7 @@ class BaseConfig:
     github_authentication_type: GitHubAuthenticationType
     github_pat_token: str | None
     github_app_id: str | None
-    github_app_private_key_path: str | None
+    github_app_private_key_path: Path | None
     github_app_installation_id: str | None
     repo: str | None
 
@@ -29,7 +30,7 @@ class BaseConfig:
 class ProcessIssuesConfig(BaseConfig):
     """Configuration class for the process-issues command."""
 
-    yaml_path: str | None
+    yaml_path: Path | None
     create_prs: bool
 
 
@@ -37,6 +38,6 @@ class ProcessIssuesConfig(BaseConfig):
 class ExportIssuesConfig(BaseConfig):
     """Configuration class for the export-issues command."""
 
-    output_file: str | None
+    output_file: Path | None
     state: str | None
     label: str | None
