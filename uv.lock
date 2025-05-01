@@ -177,11 +177,6 @@ docs = [
     { name = "mkdocs-material" },
 ]
 
-[package.dev-dependencies]
-dev = [
-    { name = "pytest-asyncio" },
-]
-
 [package.metadata]
 requires-dist = [
     { name = "githubkit", specifier = ">=0.12.12" },
@@ -203,9 +198,6 @@ requires-dist = [
     { name = "typer", extras = ["all"], specifier = ">=0.9,<1.0" },
 ]
 provides-extras = ["dev", "docs"]
-
-[package.metadata.requires-dev]
-dev = [{ name = "pytest-asyncio", specifier = ">=0.26.0" }]
 
 [[package]]
 name = "githubkit"
