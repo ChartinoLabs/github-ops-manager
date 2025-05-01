@@ -12,7 +12,7 @@ class RequiredConfigurationElementError(Exception):
 
     def __init__(self, name: str, cli_name: str, env_name: str) -> None:
         """Initializes the exception with the name of the missing element."""
-        super().__init__(f"Missing required configuration element: {name}")
+        super().__init__(f"Missing required configuration element: {name} (command line option {cli_name}, environment variable {env_name})")
         self.name = name
         self.cli_name = cli_name
         self.env_name = env_name
