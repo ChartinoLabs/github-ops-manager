@@ -126,3 +126,112 @@ async def reconcile_base_configuration(
         github_app_installation_id=reconciled_github_app_installation_id,
         repo=reconciled_repo,
     )
+
+
+async def reconcile_process_issues_configuration(
+    cli_debug: bool,
+    cli_github_api_url: str,
+    cli_github_pat_token: str | None,
+    cli_github_app_id: str | None,
+    cli_github_app_private_key_path: Path | None,
+    cli_github_app_installation_id: str | None,
+    cli_repo: str | None,
+    cli_yaml_path: Path | None,
+    cli_create_prs: bool,
+) -> ProcessIssuesConfig:
+    """Reconciles the configuration for processing GitHub issues.
+
+    Builds upon base configuration and adds process-issues specific settings.
+
+    Args:
+        cli_debug: Whether debug mode is enabled.
+        cli_github_api_url: The GitHub API URL.
+        cli_github_pat_token: Optional GitHub PAT token.
+        cli_github_app_id: Optional GitHub App ID.
+        cli_github_app_private_key_path: Optional path to GitHub App private key.
+        cli_github_app_installation_id: Optional GitHub App installation ID.
+        cli_repo: The target repository.
+        cli_yaml_path: Path to the YAML file containing issues.
+        cli_create_prs: Whether to create PRs for the issues.
+
+    Returns:
+        ProcessIssuesConfig: The reconciled configuration for processing issues.
+    """
+    base_config = await reconcile_base_configuration(
+        cli_debug=cli_debug,
+        cli_github_api_url=cli_github_api_url,
+        cli_github_pat_token=cli_github_pat_token,
+        cli_github_app_id=cli_github_app_id,
+        cli_github_app_private_key_path=cli_github_app_private_key_path,
+        cli_github_app_installation_id=cli_github_app_installation_id,
+        cli_repo=cli_repo,
+    )
+
+    return ProcessIssuesConfig(
+        debug=base_config.debug,
+        github_api_url=base_config.github_api_url,
+        github_authentication_type=base_config.github_authentication_type,
+        github_pat_token=base_config.github_pat_token,
+        github_app_id=base_config.github_app_id,
+        github_app_private_key_path=base_config.github_app_private_key_path,
+        github_app_installation_id=base_config.github_app_installation_id,
+        repo=base_config.repo,
+        yaml_path=cli_yaml_path,
+        create_prs=cli_create_prs,
+    )
+
+
+async def reconcile_export_issues_configuration(
+    cli_debug: bool,
+    cli_github_api_url: str,
+    cli_github_pat_token: str | None,
+    cli_github_app_id: str | None,
+    cli_github_app_private_key_path: Path | None,
+    cli_github_app_installation_id: str | None,
+    cli_repo: str | None,
+    cli_output_file: Path | None,
+    cli_state: str | None,
+    cli_label: str | None,
+) -> ExportIssuesConfig:
+    """Reconciles the configuration for exporting GitHub issues.
+
+    Builds upon base configuration and adds export-issues specific settings.
+
+    Args:
+        cli_debug: Whether debug mode is enabled.
+        cli_github_api_url: The GitHub API URL.
+        cli_github_pat_token: Optional GitHub PAT token.
+        cli_github_app_id: Optional GitHub App ID.
+        cli_github_app_private_key_path: Optional path to GitHub App private key.
+        cli_github_app_installation_id: Optional GitHub App installation ID.
+        cli_repo: The target repository.
+        cli_output_file: Path to save the exported issues.
+        cli_state: Filter issues by state (e.g., "open", "closed").
+        cli_label: Filter issues by label.
+
+    Returns:
+        ExportIssuesConfig: The reconciled configuration for exporting issues.
+    """
+    base_config = await reconcile_base_configuration(
+        cli_debug=cli_debug,
+        cli_github_api_url=cli_github_api_url,
+        cli_github_pat_token=cli_github_pat_token,
+        cli_github_app_id=cli_github_app_id,
+        cli_github_app_private_key_path=cli_github_app_private_key_path,
+        cli_github_app_installation_id=cli_github_app_installation_id,
+        cli_repo=cli_repo,
+    )
+
+    return ExportIssuesConfig(
+        debug=base_config.debug,
+        github_api_url=base_config.github_api_url,
+        github_authentication_type=base_config.github_authentication_type,
+        github_pat_token=base_config.github_pat_token,
+        github_app_id=base_config.github_app_id,
+        github_app_private_key_path=base_config.github_app_private_key_path,
+        github_app_installation_id=base_config.github_app_installation_id,
+        repo=base_config.repo,
+        output_file=cli_output_file,
+        state=cli_state,
+        label=cli_label,
+    )
