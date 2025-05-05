@@ -85,9 +85,7 @@ def test_extra_fields_logged_and_ignored(caplog: LogCaptureFixture) -> None:
     assert len(issues) == 1
     assert not hasattr(issues[0], "foo")
     # Check that a warning about extra fields was logged
-    assert any(
-        "Extra fields in issue will be ignored" in r for r in caplog.text.splitlines()
-    )
+    assert any("Extra fields in issue will be ignored" in r for r in caplog.text.splitlines())
 
 
 def test_field_mapping() -> None:

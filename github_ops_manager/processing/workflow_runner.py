@@ -2,7 +2,6 @@
 
 """Orchestrates the main workflows (e.g., sync-to-github, export-issues)."""
 
-
 from github_ops_manager.configuration.models import ProcessIssuesConfig
 from github_ops_manager.processing.results import ProcessIssuesResult
 from github_ops_manager.processing.yaml_processor import (

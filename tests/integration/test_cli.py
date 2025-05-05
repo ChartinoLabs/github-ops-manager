@@ -10,9 +10,7 @@ def run_cli(args: List[str]) -> subprocess.CompletedProcess[str]:
     """Helper to run the CLI as a subprocess and capture output."""
     base_args = ["--github-pat-token", "dummy-token", "--repo", "dummy/repo"]
     result = subprocess.run(
-        [sys.executable, "-m", "github_ops_manager.configuration.cli"]
-        + base_args
-        + args,
+        [sys.executable, "-m", "github_ops_manager.configuration.cli"] + base_args + args,
         capture_output=True,
         text=True,
     )

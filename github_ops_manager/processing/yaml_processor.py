@@ -58,16 +58,12 @@ class YAMLProcessor:
                 if issue:
                     all_issues.append(issue)
         if errors:
-            logger.error(
-                "One or more errors occurred during YAML processing", errors=errors
-            )
+            logger.error("One or more errors occurred during YAML processing", errors=errors)
             if self.raise_on_error:
                 raise YAMLProcessingError(errors)
         return all_issues
 
-    def _load_yaml_file(
-        self, path: str, errors: list[dict[str, Any]]
-    ) -> dict[str, Any] | None:
+    def _load_yaml_file(self, path: str, errors: list[dict[str, Any]]) -> dict[str, Any] | None:
         try:
             with open(path) as f:
                 data: dict[str, Any] = yaml.load(f)  # type: ignore
@@ -82,9 +78,7 @@ class YAMLProcessor:
             errors.append({"file": path, "error": str(e)})
             return None
 
-    def _extract_issues(
-        self, data: dict[str, Any], path: str, errors: list[dict[str, Any]]
-    ) -> list[dict[str, Any]]:
+    def _extract_issues(self, data: dict[str, Any], path: str, errors: list[dict[str, Any]]) -> list[dict[str, Any]]:
         if "issues" not in data:
             logger.error("YAML file missing top-level 'issues' key", path=path)
             errors.append({"file": path, "error": "Missing top-level 'issues' key"})
@@ -105,13 +99,9 @@ class YAMLProcessor:
                 issue_index=idx,
                 actual_type=type(issue_dict).__name__,
             )
-            errors.append(
-                {"file": path, "issue_index": idx, "error": "Issue entry is not a dict"}
-            )
+            errors.append({"file": path, "issue_index": idx, "error": "Issue entry is not a dict"})
             return None
-        mapped: dict[str, Any] = self._apply_field_mapping(
-            cast(dict[str, Any], issue_dict), self.field_mapping
-        )
+        mapped: dict[str, Any] = self._apply_field_mapping(cast(dict[str, Any], issue_dict), self.field_mapping)
         extra_fields = set(mapped.keys()) - set(self.schema.model_fields.keys())
         if extra_fields:
             logger.warning(
@@ -133,9 +123,7 @@ class YAMLProcessor:
             errors.append({"file": path, "issue_index": idx, "error": ve.errors()})
             return None
 
-    def _apply_field_mapping(
-        self, issue_dict: dict[str, Any], field_mapping: dict[str, str] | None
-    ) -> dict[str, Any]:
+    def _apply_field_mapping(self, issue_dict: dict[str, Any], field_mapping: dict[str, str] | None) -> dict[str, Any]:
         """Apply a field mapping (renaming) to a dictionary representing an issue.
 
         Args:
