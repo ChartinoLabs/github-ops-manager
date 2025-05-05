@@ -1,5 +1,6 @@
 """Defines the Command Line Interface (CLI) using Typer."""
 
+import asyncio
 from pathlib import Path
 from typing import Any
 
@@ -45,18 +46,19 @@ def process_issues_cli(
 ) -> None:
     """Processes issues in a GitHub repository."""
     base_args: dict[str, Any] = ctx.obj or {}
-    config = driver.get_process_issues_config(
-        debug=base_args.get("debug", False),
-        github_api_url=base_args.get("github_api_url", "https://api.github.com"),
-        github_pat_token=base_args.get("github_pat_token"),
-        github_app_id=base_args.get("github_app_id"),
-        github_app_private_key_path=base_args.get("github_app_private_key_path"),
-        github_app_installation_id=base_args.get("github_app_installation_id"),
-        repo=base_args.get("repo"),
-        yaml_path=yaml_path,
-        create_prs=create_prs,
+    asyncio.run(
+        driver.get_process_issues_config(
+            debug=base_args.get("debug", False),
+            github_api_url=base_args.get("github_api_url", "https://api.github.com"),
+            github_pat_token=base_args.get("github_pat_token"),
+            github_app_id=base_args.get("github_app_id"),
+            github_app_private_key_path=base_args.get("github_app_private_key_path"),
+            github_app_installation_id=base_args.get("github_app_installation_id"),
+            repo=base_args.get("repo"),
+            yaml_path=yaml_path,
+            create_prs=create_prs,
+        )
     )
-    print(config)
 
 
 @typer_app.command(name="export-issues")
@@ -68,16 +70,17 @@ def export_issues_cli(
 ) -> None:
     """Exports issues from a GitHub repository."""
     base_args: dict[str, Any] = ctx.obj or {}
-    config = driver.get_export_issues_config(
-        debug=base_args.get("debug", False),
-        github_api_url=base_args.get("github_api_url", "https://api.github.com"),
-        github_pat_token=base_args.get("github_pat_token"),
-        github_app_id=base_args.get("github_app_id"),
-        github_app_private_key_path=base_args.get("github_app_private_key_path"),
-        github_app_installation_id=base_args.get("github_app_installation_id"),
-        repo=base_args.get("repo"),
-        output_file=output_file,
-        state=state,
-        label=label,
+    asyncio.run(
+        driver.get_export_issues_config(
+            debug=base_args.get("debug", False),
+            github_api_url=base_args.get("github_api_url", "https://api.github.com"),
+            github_pat_token=base_args.get("github_pat_token"),
+            github_app_id=base_args.get("github_app_id"),
+            github_app_private_key_path=base_args.get("github_app_private_key_path"),
+            github_app_installation_id=base_args.get("github_app_installation_id"),
+            repo=base_args.get("repo"),
+            output_file=output_file,
+            state=state,
+            label=label,
+        )
     )
-    print(config)
