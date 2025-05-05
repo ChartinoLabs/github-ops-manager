@@ -28,6 +28,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "python-dotenv>=1.0,<2.0", # For loading .env files during development
+    "pytest-asyncio>=0.26.0",
     "ruff>=0.11.8",
     "pytest>=8.3.5",
     "pre-commit>=4.2.0",
@@ -44,9 +45,6 @@ docs = [
 "Homepage" = "https://github.com/aitestino/github-ops-manager.git"
 "Bug Tracker" = "https://github.com/aitestino/github-ops-manager.git/issues"
 
-[project.scripts]
-# placeholder-script = "github_ops_manager.cli:app" # Placeholder as requested
-
 [tool.hatch.build.targets.wheel]
 packages = ["src/github_ops_manager"] # Placeholder as requested, assuming src layout
 
@@ -56,6 +54,7 @@ packages = ["src/github_ops_manager"] # Placeholder as requested, assuming src l
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = "test_*.py"
+asyncio_default_fixture_loop_scope = "function"
 
 [tool.ruff]
 line-length = 150

@@ -11,7 +11,7 @@ repos:
       - id: requirements-txt-fixer
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.4.4 # Latest version as of Apr 2025
+    rev: v0.11.8 # Latest version as of Apr 2025
     hooks:
       - id: ruff
         name: Ruff Linter
