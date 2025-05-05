@@ -92,13 +92,24 @@ class YAMLProcessor:
 
     def _process_issue_dict(
         self,
-        issue_dict: dict[str, Any],
+        issue_dict: Any,
         path: str,
         idx: int,
         errors: list[dict[str, Any]],
     ) -> BaseModel | None:
+        if not isinstance(issue_dict, dict):
+            logger.warning(
+                "Issue entry is not a dict and will be skipped",
+                file=path,
+                issue_index=idx,
+                actual_type=type(issue_dict).__name__,
+            )
+            errors.append(
+                {"file": path, "issue_index": idx, "error": "Issue entry is not a dict"}
+            )
+            return None
         mapped: dict[str, Any] = self._apply_field_mapping(
-            issue_dict, self.field_mapping
+            cast(dict[str, Any], issue_dict), self.field_mapping
         )
         extra_fields = set(mapped.keys()) - set(self.schema.model_fields.keys())
         if extra_fields:
