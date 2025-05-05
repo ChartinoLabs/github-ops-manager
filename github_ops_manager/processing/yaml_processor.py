@@ -41,13 +41,13 @@ class YAMLProcessor:
             field_mapping (dict[str, str] | None): Optional mapping from YAML field names to schema field names.
             raise_on_error (bool): Whether to raise a YAMLProcessingError on validation errors.
         """
-        self.schema = schema
+        self.schema = schema  # This is unused for now
         self.field_mapping = field_mapping
         self.raise_on_error = raise_on_error
 
-    def load_issues(self, yaml_paths: list[str]) -> list[BaseModel]:
+    def load_issues(self, yaml_paths: list[str]) -> list[IssueModel]:
         """Load and validate issues from one or more YAML files."""
-        all_issues: list[BaseModel] = []
+        all_issues: list[IssueModel] = []
         errors: list[dict[str, Any]] = []
         for path in yaml_paths:
             data = self._load_yaml_file(path, errors)
@@ -91,7 +91,7 @@ class YAMLProcessor:
         path: str,
         idx: int,
         errors: list[dict[str, Any]],
-    ) -> BaseModel | None:
+    ) -> IssueModel | None:
         if not isinstance(issue_dict, dict):
             logger.warning(
                 "Issue entry is not a dict and will be skipped",
@@ -102,7 +102,7 @@ class YAMLProcessor:
             errors.append({"file": path, "issue_index": idx, "error": "Issue entry is not a dict"})
             return None
         mapped: dict[str, Any] = self._apply_field_mapping(cast(dict[str, Any], issue_dict), self.field_mapping)
-        extra_fields = set(mapped.keys()) - set(self.schema.model_fields.keys())
+        extra_fields = set(mapped.keys()) - set(IssueModel.model_fields.keys())
         if extra_fields:
             logger.warning(
                 "Extra fields in issue will be ignored",
@@ -110,9 +110,9 @@ class YAMLProcessor:
                 issue_index=idx,
                 extra_fields=list(extra_fields),
             )
-        filtered = {k: v for k, v in mapped.items() if k in self.schema.model_fields}
+        filtered = {k: v for k, v in mapped.items() if k in IssueModel.model_fields}
         try:
-            return self.schema(**filtered)
+            return IssueModel(**filtered)
         except ValidationError as ve:
             logger.error(
                 "Validation error for issue",
