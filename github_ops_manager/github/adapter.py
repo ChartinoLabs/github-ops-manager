@@ -46,7 +46,7 @@ class GitHubKitAdapter(GitHubClientBase):
         body: str | None = None,
         assignees: list[str] | None = None,
         labels: list[str] | None = None,
-        milestone: int | None = None,
+        milestone: str | int | None = None,
         **kwargs: Any,
     ) -> Issue:
         """Create an issue for a repository."""
@@ -69,7 +69,7 @@ class GitHubKitAdapter(GitHubClientBase):
         body: str | None = None,
         assignees: list[str] | None = None,
         labels: list[str] | None = None,
-        milestone: int | None = None,
+        milestone: str | int | None = None,
         state: Literal["open", "closed"] | None = None,
         **kwargs: Any,
     ) -> Issue:
