@@ -3,7 +3,13 @@
 from typing import Any, Self
 
 from githubkit import Response
-from githubkit.versions.latest.models import FullRepository, Issue
+from githubkit.versions.latest.models import (
+    FullRepository,
+    Issue,
+    Label,
+    PullRequest,
+    PullRequestSimple,
+)
 
 from github_ops_manager.utils.github import split_repository_in_configuration
 
@@ -27,26 +33,103 @@ class GitHubKitAdapter(GitHubClientBase):
         owner, repo_name = await split_repository_in_configuration()
         return cls(client, owner, repo_name)
 
+    # Repository CRUD
     async def get_repository(self) -> FullRepository:
         """Get the repository for the current client."""
         response: Response[FullRepository] = await self.client.rest.repos.async_get(owner=self.owner, repo=self.repo_name)
         return response.parsed_data
 
-    async def create_issue(self, title: str, body: str | None = None, **kwargs: Any) -> Any:
+    # Issue CRUD
+    async def create_issue(self, title: str, body: str | None = None, **kwargs: Any) -> Issue:
         """Create an issue for a repository."""
         response: Response[Issue] = await self.client.rest.issues.async_create(
             owner=self.owner, repo=self.repo_name, title=title, body=body, **kwargs
         )
         return response.parsed_data
 
-    async def update_issue(self, issue_number: int, **kwargs: Any) -> Any:
+    async def update_issue(self, issue_number: int, **kwargs: Any) -> Issue:
         """Update an issue for a repository."""
         response: Response[Issue] = await self.client.rest.issues.async_update(
             owner=self.owner, repo=self.repo_name, issue_number=issue_number, **kwargs
         )
         return response.parsed_data
 
-    async def list_issues(self, **kwargs: Any) -> list[Any]:
+    async def list_issues(self, **kwargs: Any) -> list[Issue]:
         """List issues for a repository."""
         response: Response[list[Issue]] = await self.client.rest.issues.async_list_for_repo(owner=self.owner, repo=self.repo_name, **kwargs)
+        return response.parsed_data
+
+    async def close_issue(self, issue_number: int, **kwargs: Any) -> Issue:
+        """Close an issue for a repository."""
+        response: Response[Issue] = await self.client.rest.issues.async_update(
+            owner=self.owner,
+            repo=self.repo_name,
+            issue_number=issue_number,
+            state="closed",
+            **kwargs,
+        )
+        return response.parsed_data
+
+    # Label CRUD
+    async def create_label(self, name: str, color: str, **kwargs: Any) -> Label:
+        """Create a label for a repository."""
+        response: Response[Label] = await self.client.rest.issues.async_create_label(
+            owner=self.owner, repo=self.repo_name, name=name, color=color, **kwargs
+        )
+        return response.parsed_data
+
+    async def update_label(self, name: str, **kwargs: Any) -> Label:
+        """Update a label for a repository."""
+        response: Response[Label] = await self.client.rest.issues.async_update_label(owner=self.owner, repo=self.repo_name, name=name, **kwargs)
+        return response.parsed_data
+
+    async def delete_label(self, name: str) -> None:
+        """Delete a label for a repository."""
+        await self.client.rest.issues.async_delete_label(owner=self.owner, repo=self.repo_name, name=name)
+        return None
+
+    async def list_labels(self, **kwargs: Any) -> list[Label]:
+        """List labels for a repository."""
+        response: Response[list[Label]] = await self.client.rest.issues.async_list_labels_for_repo(owner=self.owner, repo=self.repo_name, **kwargs)
+        return response.parsed_data
+
+    # Pull Request CRUD
+    async def create_pull_request(self, title: str, head: str, base: str, **kwargs: Any) -> PullRequest:
+        """Create a pull request for a repository."""
+        response: Response[PullRequest] = await self.client.rest.pulls.async_create(
+            owner=self.owner,
+            repo=self.repo_name,
+            title=title,
+            head=head,
+            base=base,
+            **kwargs,
+        )
+        return response.parsed_data
+
+    async def update_pull_request(self, pull_number: int, **kwargs: Any) -> PullRequest:
+        """Update a pull request for a repository."""
+        response: Response[PullRequest] = await self.client.rest.pulls.async_update(
+            owner=self.owner, repo=self.repo_name, pull_number=pull_number, **kwargs
+        )
+        return response.parsed_data
+
+    async def list_pull_requests(self, **kwargs: Any) -> list[PullRequestSimple]:
+        """List pull requests for a repository."""
+        response: Response[list[PullRequestSimple]] = await self.client.rest.pulls.async_list(owner=self.owner, repo=self.repo_name, **kwargs)
+        return response.parsed_data
+
+    async def merge_pull_request(self, pull_number: int, **kwargs: Any) -> Any:
+        """Merge a pull request for a repository."""
+        response = await self.client.rest.pulls.async_merge(owner=self.owner, repo=self.repo_name, pull_number=pull_number, **kwargs)
+        return response.parsed_data
+
+    async def close_pull_request(self, pull_number: int, **kwargs: Any) -> PullRequest:
+        """Close a pull request for a repository."""
+        response: Response[PullRequest] = await self.client.rest.pulls.async_update(
+            owner=self.owner,
+            repo=self.repo_name,
+            pull_number=pull_number,
+            state="closed",
+            **kwargs,
+        )
         return response.parsed_data
