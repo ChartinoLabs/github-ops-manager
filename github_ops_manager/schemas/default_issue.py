@@ -10,7 +10,7 @@ class IssueModel(BaseModel):
     body: str | None = None
     labels: list[str] | None = None
     assignees: list[str] | None = None
-    milestone: str | None = None
+    milestone: str | int | None = None
     state: str = "open"
 
 
