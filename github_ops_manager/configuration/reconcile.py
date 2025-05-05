@@ -23,7 +23,7 @@ async def validate_github_authentication_configuration(
     github_pat_token: str | None,
     github_app_id: int | None,
     github_app_private_key_path: Path | None,
-    github_app_installation_id: str | None,
+    github_app_installation_id: int | None,
 ) -> GitHubAuthenticationType:
     """Validates the GitHub authentication configuration.
 
@@ -31,7 +31,7 @@ async def validate_github_authentication_configuration(
         github_pat_token (str | None): The GitHub PAT token.
         github_app_id (int | None): The GitHub App ID.
         github_app_private_key_path (str | None): The path to the GitHub App private key.
-        github_app_installation_id (str | None): The GitHub App installation ID.
+        github_app_installation_id (int | None): The GitHub App installation ID.
 
     Raises:
         GitHubAuthenticationConfigurationUndefinedError: If both PAT and App configurations are undefined.
@@ -90,7 +90,7 @@ async def reconcile_base_configuration(
     cli_github_pat_token: str | None,
     cli_github_app_id: int | None,
     cli_github_app_private_key_path: Path | None,
-    cli_github_app_installation_id: str | None,
+    cli_github_app_installation_id: int | None,
     cli_repo: str | None,
 ) -> BaseConfig:
     """Reconciles the base configuration for the GitHub Operations Manager CLI.
@@ -138,7 +138,7 @@ async def reconcile_process_issues_configuration(
     cli_github_pat_token: str | None,
     cli_github_app_id: int | None,
     cli_github_app_private_key_path: Path | None,
-    cli_github_app_installation_id: str | None,
+    cli_github_app_installation_id: int | None,
     cli_repo: str | None,
     cli_yaml_path: Path | None,
     cli_create_prs: bool,
@@ -191,7 +191,7 @@ async def reconcile_export_issues_configuration(
     cli_github_pat_token: str | None,
     cli_github_app_id: int | None,
     cli_github_app_private_key_path: Path | None,
-    cli_github_app_installation_id: str | None,
+    cli_github_app_installation_id: int | None,
     cli_repo: str | None,
     cli_output_file: Path | None,
     cli_state: str | None,

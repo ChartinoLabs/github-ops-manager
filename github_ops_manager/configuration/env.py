@@ -27,7 +27,7 @@ class Settings(BaseSettings):
     # GitHub App settings
     GITHUB_APP_ID: int | None = None
     GITHUB_APP_PRIVATE_KEY_PATH: Path | None = None
-    GITHUB_APP_INSTALLATION_ID: str | None = None
+    GITHUB_APP_INSTALLATION_ID: int | None = None
 
 
 settings = Settings()

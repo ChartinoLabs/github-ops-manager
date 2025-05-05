@@ -26,9 +26,9 @@ def base_cli_arguments(
     debug: bool = False,
     github_api_url: str = "https://api.github.com",
     github_pat_token: str | None = None,
-    github_app_id: str | None = None,
+    github_app_id: int | None = None,
     github_app_private_key_path: Path | None = None,
-    github_app_installation_id: str | None = None,
+    github_app_installation_id: int | None = None,
     repo: str | None = None,
 ) -> None:
     """Base CLI arguments for the GitHub Operations Manager."""

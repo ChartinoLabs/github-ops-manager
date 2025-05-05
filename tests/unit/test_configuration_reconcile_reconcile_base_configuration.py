@@ -101,7 +101,7 @@ async def test_reconcile_with_github_app_auth() -> None:
             cli_github_pat_token=None,
             cli_github_app_id=1234567890,
             cli_github_app_private_key_path=Path("/path/to/key.pem"),
-            cli_github_app_installation_id="install-id",
+            cli_github_app_installation_id=1234567890,
             cli_repo="owner/repo",
         )
 
@@ -110,7 +110,7 @@ async def test_reconcile_with_github_app_auth() -> None:
     assert result.github_authentication_type == GitHubAuthenticationType.APP
     assert result.github_app_id == 1234567890
     assert result.github_app_private_key_path == Path("/path/to/key.pem")
-    assert result.github_app_installation_id == "install-id"
+    assert result.github_app_installation_id == 1234567890
 
 
 @pytest.mark.asyncio
@@ -189,7 +189,7 @@ async def test_mixed_auth_methods() -> None:
                 cli_github_pat_token="pat-token",
                 cli_github_app_id=1234567890,
                 cli_github_app_private_key_path=Path("/path/to/key.pem"),
-                cli_github_app_installation_id="install-id",
+                cli_github_app_installation_id=1234567890,
                 cli_repo="owner/repo",
             )
 
@@ -237,7 +237,7 @@ async def test_mixed_github_app_auth_sources() -> None:
         mock_settings.GITHUB_PAT_TOKEN = None
         mock_settings.GITHUB_APP_ID = None
         mock_settings.GITHUB_APP_PRIVATE_KEY_PATH = Path("/env/path/to/key.pem")
-        mock_settings.GITHUB_APP_INSTALLATION_ID = "env-install-id"
+        mock_settings.GITHUB_APP_INSTALLATION_ID = 1234567890
         mock_settings.REPO = None
 
         result = await reconcile_base_configuration(
@@ -255,7 +255,7 @@ async def test_mixed_github_app_auth_sources() -> None:
     assert result.github_authentication_type == GitHubAuthenticationType.APP
     assert result.github_app_id == 1234567890  # From CLI
     assert result.github_app_private_key_path == Path("/env/path/to/key.pem")  # From env
-    assert result.github_app_installation_id == "env-install-id"  # From env
+    assert result.github_app_installation_id == 1234567890  # From env
 
 
 @pytest.mark.asyncio

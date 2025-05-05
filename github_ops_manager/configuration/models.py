@@ -22,7 +22,7 @@ class BaseConfig:
     github_pat_token: str | None
     github_app_id: int | None
     github_app_private_key_path: Path | None
-    github_app_installation_id: str | None
+    github_app_installation_id: int | None
     repo: str | None
 
 
