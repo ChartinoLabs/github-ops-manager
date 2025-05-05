@@ -101,3 +101,7 @@ def export_issues_cli(
             label=label,
         )
     )
+
+
+if __name__ == "__main__":
+    typer_app()
