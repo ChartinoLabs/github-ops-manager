@@ -59,79 +59,74 @@ class YAMLProcessor:
         self.field_mapping = field_mapping
 
     def load_issues(self, yaml_paths: list[str]) -> list[BaseModel]:
-        """Load and validate issues from one or more YAML files.
-
-        Args:
-            yaml_paths (list[str]): List of file paths to YAML files.
-
-        Returns:
-            list[BaseModel]: List of validated issue models. Issues with validation errors are skipped.
-
-        Side Effects:
-            Logs warnings for extra fields, errors for validation failures, and collects all errors.
-        """
+        """Load and validate issues from one or more YAML files."""
         all_issues: list[BaseModel] = []
         errors: list[dict[str, Any]] = []
         for path in yaml_paths:
-            try:
-                with open(path) as f:
-                    data: dict[str, Any] = yaml.load(f)  # type: ignore
-            except Exception as e:
-                logger.error("Failed to parse YAML file", path=path, error=str(e))
-                errors.append({"file": path, "error": str(e)})
+            data = self._load_yaml_file(path, errors)
+            if data is None:
                 continue
-            if not isinstance(data, dict) or "issues" not in data:
-                logger.error("YAML file missing top-level 'issues' key", path=path)
-                errors.append({"file": path, "error": "Missing top-level 'issues' key"})
-                continue
-            issue_dict: dict[str, Any] | Any
-            for idx, issue_dict in enumerate(data["issues"]):
-                if not isinstance(issue_dict, dict):
-                    logger.warning(
-                        "Issue entry is not a dict and will be skipped",
-                        file=path,
-                        issue_index=idx,
-                        actual_type=type(issue_dict).__name__,
-                    )
-                    errors.append(
-                        {
-                            "file": path,
-                            "issue_index": idx,
-                            "error": "Issue entry is not a dict",
-                        }
-                    )
-                    continue
-                mapped: dict[str, Any] = _apply_field_mapping(
-                    issue_dict, self.field_mapping
-                )
-                # Warn about extra fields
-                extra_fields = set(mapped.keys()) - set(self.schema.model_fields.keys())
-                if extra_fields:
-                    logger.warning(
-                        "Extra fields in issue will be ignored",
-                        file=path,
-                        issue_index=idx,
-                        extra_fields=list(extra_fields),
-                    )
-                # Only keep fields that are in the schema
-                filtered = {
-                    k: v for k, v in mapped.items() if k in self.schema.model_fields
-                }
-                try:
-                    issue = self.schema(**filtered)
+            for idx, issue_dict in enumerate(self._extract_issues(data, path, errors)):
+                issue = self._process_issue_dict(issue_dict, path, idx, errors)
+                if issue:
                     all_issues.append(issue)
-                except ValidationError as ve:
-                    logger.error(
-                        "Validation error for issue",
-                        file=path,
-                        issue_index=idx,
-                        error=ve.errors(),
-                    )
-                    errors.append(
-                        {"file": path, "issue_index": idx, "error": ve.errors()}
-                    )
         if errors:
             logger.error(
                 "One or more errors occurred during YAML processing", errors=errors
             )
         return all_issues
+
+    def _load_yaml_file(
+        self, path: str, errors: list[dict[str, Any]]
+    ) -> dict[str, Any] | None:
+        try:
+            with open(path) as f:
+                data: dict[str, Any] = yaml.load(f)  # type: ignore
+            # If loaded data is not a dictionary, throw an error.
+            if not isinstance(data, dict):
+                logger.error("YAML file is not a dictionary", path=path)
+                errors.append({"file": path, "error": "YAML file is not a dictionary"})
+                return None
+            return data
+        except Exception as e:
+            logger.error("Failed to parse YAML file", path=path, error=str(e))
+            errors.append({"file": path, "error": str(e)})
+            return None
+
+    def _extract_issues(
+        self, data: dict[str, Any], path: str, errors: list[dict[str, Any]]
+    ) -> list[dict[str, Any]]:
+        if "issues" not in data:
+            logger.error("YAML file missing top-level 'issues' key", path=path)
+            errors.append({"file": path, "error": "Missing top-level 'issues' key"})
+            return []
+        return data["issues"]
+
+    def _process_issue_dict(
+        self,
+        issue_dict: dict[str, Any],
+        path: str,
+        idx: int,
+        errors: list[dict[str, Any]],
+    ) -> BaseModel | None:
+        mapped: dict[str, Any] = _apply_field_mapping(issue_dict, self.field_mapping)
+        extra_fields = set(mapped.keys()) - set(self.schema.model_fields.keys())
+        if extra_fields:
+            logger.warning(
+                "Extra fields in issue will be ignored",
+                file=path,
+                issue_index=idx,
+                extra_fields=list(extra_fields),
+            )
+        filtered = {k: v for k, v in mapped.items() if k in self.schema.model_fields}
+        try:
+            return self.schema(**filtered)
+        except ValidationError as ve:
+            logger.error(
+                "Validation error for issue",
+                file=path,
+                issue_index=idx,
+                error=ve.errors(),
+            )
+            errors.append({"file": path, "issue_index": idx, "error": ve.errors()})
+            return None
