@@ -33,9 +33,7 @@ async def test_get_process_issues_config_sets_and_returns_config() -> None:
             "github_ops_manager.configuration.reconcile.reconcile_process_issues_configuration",
             new=AsyncMock(return_value=fake_config),
         ) as mock_reconcile,
-        patch(
-            "github_ops_manager.configuration.driver.set_configuration", new=AsyncMock()
-        ) as mock_set_config,
+        patch("github_ops_manager.configuration.driver.set_configuration", new=AsyncMock()) as mock_set_config,
     ):
         result = await driver.get_process_issues_config(
             debug=True,
@@ -74,9 +72,7 @@ async def test_get_export_issues_config_sets_and_returns_config() -> None:
             "github_ops_manager.configuration.reconcile.reconcile_export_issues_configuration",
             new=AsyncMock(return_value=fake_config),
         ) as mock_reconcile,
-        patch(
-            "github_ops_manager.configuration.driver.set_configuration", new=AsyncMock()
-        ) as mock_set_config,
+        patch("github_ops_manager.configuration.driver.set_configuration", new=AsyncMock()) as mock_set_config,
     ):
         result = await driver.get_export_issues_config(
             debug=False,

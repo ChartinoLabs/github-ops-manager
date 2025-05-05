@@ -99,7 +99,7 @@ def retry_on_exception(max_retries=5, default_backoff=60):
                                 logger.warning(f"No rate limit guidance, will wait for {wait_time} seconds")
 
                             logger.error(
-                                f"Retry {retries+1}/{max_retries}: API call failed with status {status_code}, message '{message}'. "
+                                f"Retry {retries + 1}/{max_retries}: API call failed with status {status_code}, message '{message}'. "
                                 f"Retrying after {wait_time} seconds..."
                             )
                             time.sleep(wait_time)

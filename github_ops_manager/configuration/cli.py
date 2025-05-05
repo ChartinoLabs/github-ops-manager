@@ -41,9 +41,7 @@ def base_cli_arguments(
 
 
 @typer_app.command(name="process-issues")
-def process_issues_cli(
-    ctx: typer.Context, yaml_path: Path | None = None, create_prs: bool = False
-) -> None:
+def process_issues_cli(ctx: typer.Context, yaml_path: Path | None = None, create_prs: bool = False) -> None:
     """Processes issues in a GitHub repository."""
     base_args: dict[str, Any] = ctx.obj or {}
     asyncio.run(

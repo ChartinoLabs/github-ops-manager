@@ -39,12 +39,8 @@ async def validate_github_authentication_configuration(
     Returns:
         GitHubAuthenticationType: The type of GitHub authentication used.
     """
-    if github_pat_token and (
-        github_app_id or github_app_private_key_path or github_app_installation_id
-    ):
-        raise GitHubAuthenticationConfigurationUndefinedError(
-            "Both PAT and GitHub App configurations are defined. Please use one or the other."
-        )
+    if github_pat_token and (github_app_id or github_app_private_key_path or github_app_installation_id):
+        raise GitHubAuthenticationConfigurationUndefinedError("Both PAT and GitHub App configurations are defined. Please use one or the other.")
 
     if github_pat_token:
         return GitHubAuthenticationType.PAT
@@ -77,12 +73,9 @@ async def validate_github_authentication_configuration(
                     "env_name": "GITHUB_APP_INSTALLATION_ID",
                 }
             )
-        msg = (
-            "Incomplete GitHub App configuration - missing settings include "
-            + ", ".join(
-                f"{setting['name']} (command line option {setting['cli_name']}, environment variable {setting['env_name']})"
-                for setting in missing_settings
-            )
+        msg = "Incomplete GitHub App configuration - missing settings include " + ", ".join(
+            f"{setting['name']} (command line option {setting['cli_name']}, environment variable {setting['env_name']})"
+            for setting in missing_settings
         )
         raise GitHubAuthenticationConfigurationUndefinedError(msg)
     else:
@@ -109,12 +102,8 @@ async def reconcile_base_configuration(
     reconciled_github_api_url = cli_github_api_url or settings.GITHUB_API_URL
     reconciled_github_pat_token = cli_github_pat_token or settings.GITHUB_PAT_TOKEN
     reconciled_github_app_id = cli_github_app_id or settings.GITHUB_APP_ID
-    reconciled_github_app_private_key_path = (
-        cli_github_app_private_key_path or settings.GITHUB_APP_PRIVATE_KEY_PATH
-    )
-    reconciled_github_app_installation_id = (
-        cli_github_app_installation_id or settings.GITHUB_APP_INSTALLATION_ID
-    )
+    reconciled_github_app_private_key_path = cli_github_app_private_key_path or settings.GITHUB_APP_PRIVATE_KEY_PATH
+    reconciled_github_app_installation_id = cli_github_app_installation_id or settings.GITHUB_APP_INSTALLATION_ID
     reconciled_repo = cli_repo or settings.REPO
 
     github_authentication_type = await validate_github_authentication_configuration(
