@@ -19,23 +19,6 @@ logger: BoundLogger = structlog.get_logger(__name__)  # type: ignore
 yaml = YAML(typ="safe")
 
 
-def _apply_field_mapping(
-    issue_dict: dict[str, Any] | Any, field_mapping: dict[str, str] | None
-) -> dict[str, Any]:
-    """Apply a field mapping (renaming) to a dictionary representing an issue.
-
-    Args:
-        issue_dict (Dict[str, Any]): The original issue dictionary from YAML.
-        field_mapping (Dict[str, str] | None): Optional mapping from YAML field names to schema field names.
-
-    Returns:
-        Dict[str, Any]: The issue dictionary with fields renamed according to the mapping.
-    """
-    if not field_mapping:
-        return issue_dict
-    return {field_mapping.get(k, k): v for k, v in issue_dict.items()}
-
-
 class YAMLProcessor:
     """Loads and validates issues from one or more YAML files using a Pydantic schema.
 
@@ -109,7 +92,9 @@ class YAMLProcessor:
         idx: int,
         errors: list[dict[str, Any]],
     ) -> BaseModel | None:
-        mapped: dict[str, Any] = _apply_field_mapping(issue_dict, self.field_mapping)
+        mapped: dict[str, Any] = self._apply_field_mapping(
+            issue_dict, self.field_mapping
+        )
         extra_fields = set(mapped.keys()) - set(self.schema.model_fields.keys())
         if extra_fields:
             logger.warning(
@@ -130,3 +115,19 @@ class YAMLProcessor:
             )
             errors.append({"file": path, "issue_index": idx, "error": ve.errors()})
             return None
+
+    def _apply_field_mapping(
+        self, issue_dict: dict[str, Any], field_mapping: dict[str, str] | None
+    ) -> dict[str, Any]:
+        """Apply a field mapping (renaming) to a dictionary representing an issue.
+
+        Args:
+            issue_dict (dict[str, Any]): The original issue dictionary from YAML.
+            field_mapping (dict[str, str] | None): Optional mapping from YAML field names to schema field names.
+
+        Returns:
+            dict[str, Any]: The issue dictionary with fields renamed according to the mapping.
+        """
+        if not field_mapping:
+            return issue_dict
+        return {field_mapping.get(k, k): v for k, v in issue_dict.items()}
