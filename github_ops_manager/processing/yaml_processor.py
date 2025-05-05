@@ -5,7 +5,7 @@ according to a Pydantic schema. It supports field renaming, merging issues from 
 logging extra fields, and collecting validation errors. All logging is performed using structlog.
 """
 
-from typing import Any, Type
+from typing import Any, Type, cast
 
 import structlog
 from pydantic import BaseModel, ValidationError
