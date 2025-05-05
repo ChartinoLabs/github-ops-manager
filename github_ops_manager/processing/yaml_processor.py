@@ -31,15 +31,18 @@ class YAMLProcessor:
         self,
         schema: Type[BaseModel] = IssueModel,
         field_mapping: dict[str, str] | None = None,
+        exit_on_error: bool = True,
     ) -> None:
         """Initialize YAMLProcessor with a schema and optional field mapping.
 
         Args:
             schema (Type[BaseModel]): The Pydantic model to use for validation (default: IssueModel).
             field_mapping (dict[str, str] | None): Optional mapping from YAML field names to schema field names.
+            exit_on_error (bool): Whether to exit the program on validation errors.
         """
         self.schema = schema
         self.field_mapping = field_mapping
+        self.exit_on_error = exit_on_error
 
     def load_issues(self, yaml_paths: list[str]) -> list[BaseModel]:
         """Load and validate issues from one or more YAML files."""
@@ -57,6 +60,8 @@ class YAMLProcessor:
             logger.error(
                 "One or more errors occurred during YAML processing", errors=errors
             )
+            if self.exit_on_error:
+                exit(1)
         return all_issues
 
     def _load_yaml_file(
