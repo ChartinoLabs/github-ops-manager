@@ -21,7 +21,7 @@ from github_ops_manager.configuration.models import (
 
 async def validate_github_authentication_configuration(
     github_pat_token: str | None,
-    github_app_id: str | None,
+    github_app_id: int | None,
     github_app_private_key_path: Path | None,
     github_app_installation_id: str | None,
 ) -> GitHubAuthenticationType:
@@ -29,7 +29,7 @@ async def validate_github_authentication_configuration(
 
     Args:
         github_pat_token (str | None): The GitHub PAT token.
-        github_app_id (str | None): The GitHub App ID.
+        github_app_id (int | None): The GitHub App ID.
         github_app_private_key_path (str | None): The path to the GitHub App private key.
         github_app_installation_id (str | None): The GitHub App installation ID.
 
@@ -88,7 +88,7 @@ async def reconcile_base_configuration(
     cli_debug: bool,
     cli_github_api_url: str,
     cli_github_pat_token: str | None,
-    cli_github_app_id: str | None,
+    cli_github_app_id: int | None,
     cli_github_app_private_key_path: Path | None,
     cli_github_app_installation_id: str | None,
     cli_repo: str | None,
@@ -136,7 +136,7 @@ async def reconcile_process_issues_configuration(
     cli_debug: bool,
     cli_github_api_url: str,
     cli_github_pat_token: str | None,
-    cli_github_app_id: str | None,
+    cli_github_app_id: int | None,
     cli_github_app_private_key_path: Path | None,
     cli_github_app_installation_id: str | None,
     cli_repo: str | None,
@@ -189,7 +189,7 @@ async def reconcile_export_issues_configuration(
     cli_debug: bool,
     cli_github_api_url: str,
     cli_github_pat_token: str | None,
-    cli_github_app_id: str | None,
+    cli_github_app_id: int | None,
     cli_github_app_private_key_path: Path | None,
     cli_github_app_installation_id: str | None,
     cli_repo: str | None,

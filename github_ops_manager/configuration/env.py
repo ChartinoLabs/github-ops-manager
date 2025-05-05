@@ -25,7 +25,7 @@ class Settings(BaseSettings):
     GITHUB_PAT_TOKEN: str | None = None
 
     # GitHub App settings
-    GITHUB_APP_ID: str | None = None
+    GITHUB_APP_ID: int | None = None
     GITHUB_APP_PRIVATE_KEY_PATH: Path | None = None
     GITHUB_APP_INSTALLATION_ID: str | None = None
 

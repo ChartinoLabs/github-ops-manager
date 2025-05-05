@@ -99,7 +99,7 @@ async def test_reconcile_with_github_app_auth() -> None:
             cli_debug=False,
             cli_github_api_url="",
             cli_github_pat_token=None,
-            cli_github_app_id="app-id",
+            cli_github_app_id=1234567890,
             cli_github_app_private_key_path=Path("/path/to/key.pem"),
             cli_github_app_installation_id="install-id",
             cli_repo="owner/repo",
@@ -108,7 +108,7 @@ async def test_reconcile_with_github_app_auth() -> None:
     # Then
     assert isinstance(result, BaseConfig)
     assert result.github_authentication_type == GitHubAuthenticationType.APP
-    assert result.github_app_id == "app-id"
+    assert result.github_app_id == 1234567890
     assert result.github_app_private_key_path == Path("/path/to/key.pem")
     assert result.github_app_installation_id == "install-id"
 
@@ -187,7 +187,7 @@ async def test_mixed_auth_methods() -> None:
                 cli_debug=False,
                 cli_github_api_url="",
                 cli_github_pat_token="pat-token",
-                cli_github_app_id="app-id",
+                cli_github_app_id=1234567890,
                 cli_github_app_private_key_path=Path("/path/to/key.pem"),
                 cli_github_app_installation_id="install-id",
                 cli_repo="owner/repo",
@@ -244,7 +244,7 @@ async def test_mixed_github_app_auth_sources() -> None:
             cli_debug=False,
             cli_github_api_url="",
             cli_github_pat_token=None,
-            cli_github_app_id="cli-app-id",
+            cli_github_app_id=1234567890,
             cli_github_app_private_key_path=None,
             cli_github_app_installation_id=None,
             cli_repo="owner/repo",
@@ -253,7 +253,7 @@ async def test_mixed_github_app_auth_sources() -> None:
     # Then
     assert isinstance(result, BaseConfig)
     assert result.github_authentication_type == GitHubAuthenticationType.APP
-    assert result.github_app_id == "cli-app-id"  # From CLI
+    assert result.github_app_id == 1234567890  # From CLI
     assert result.github_app_private_key_path == Path("/env/path/to/key.pem")  # From env
     assert result.github_app_installation_id == "env-install-id"  # From env
 

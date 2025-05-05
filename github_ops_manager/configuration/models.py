@@ -20,7 +20,7 @@ class BaseConfig:
     github_api_url: str
     github_authentication_type: GitHubAuthenticationType
     github_pat_token: str | None
-    github_app_id: str | None
+    github_app_id: int | None
     github_app_private_key_path: Path | None
     github_app_installation_id: str | None
     repo: str | None
