@@ -1,12 +1,16 @@
 """Defines the Command Line Interface (CLI) using Typer."""
 
 import asyncio
+import sys
 from pathlib import Path
 from typing import Any
 
 import typer
 
 from github_ops_manager.configuration import driver
+from github_ops_manager.processing.workflow_runner import (
+    run_process_issues_workflow,
+)
 
 typer_app = typer.Typer()
 
@@ -44,7 +48,7 @@ def base_cli_arguments(
 def process_issues_cli(ctx: typer.Context, yaml_path: Path | None = None, create_prs: bool = False) -> None:
     """Processes issues in a GitHub repository."""
     base_args: dict[str, Any] = ctx.obj or {}
-    asyncio.run(
+    config = asyncio.run(
         driver.get_process_issues_config(
             debug=base_args.get("debug", False),
             github_api_url=base_args.get("github_api_url", "https://api.github.com"),
@@ -57,6 +61,19 @@ def process_issues_cli(ctx: typer.Context, yaml_path: Path | None = None, create
             create_prs=create_prs,
         )
     )
+
+    result = asyncio.run(run_process_issues_workflow(config, raise_on_yaml_error=True))
+    if result.errors:
+        typer.echo("Error(s) encountered while processing YAML:", err=True)
+        for err in result.errors:
+            typer.echo(str(err), err=True)
+        sys.exit(1)
+    if config.yaml_path is not None:
+        typer.echo(f"Loaded {len(result.issues)} issues from {config.yaml_path}")
+        if result.issues:
+            typer.echo(f"First issue: {result.issues[0].model_dump()}")
+    else:
+        typer.echo("No YAML path provided. Skipping YAML processing.")
 
 
 @typer_app.command(name="export-issues")
@@ -82,3 +99,7 @@ def export_issues_cli(
             label=label,
         )
     )
+
+
+if __name__ == "__main__":
+    typer_app()
