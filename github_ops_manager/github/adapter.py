@@ -1,6 +1,6 @@
 """GitHub client adapter for the githubkit library."""
 
-from typing import Any, Self
+from typing import Any, Literal, Self
 
 from githubkit import Response
 from githubkit.versions.latest.models import (
@@ -56,7 +56,7 @@ class GitHubKitAdapter(GitHubClientBase):
             title=title,
             body=body,
             assignees=assignees,
-            labels=labels,
+            labels=labels,  # type: ignore
             milestone=milestone,
             **kwargs,
         )
@@ -70,7 +70,7 @@ class GitHubKitAdapter(GitHubClientBase):
         assignees: list[str] | None = None,
         labels: list[str] | None = None,
         milestone: int | None = None,
-        state: str | None = None,
+        state: Literal["open", "closed"] | None = None,
         **kwargs: Any,
     ) -> Issue:
         """Update an issue for a repository."""
@@ -81,7 +81,7 @@ class GitHubKitAdapter(GitHubClientBase):
             title=title,
             body=body,
             assignees=assignees,
-            labels=labels,
+            labels=labels,  # type: ignore
             milestone=milestone,
             state=state,
             **kwargs,
@@ -177,10 +177,9 @@ class GitHubKitAdapter(GitHubClientBase):
         pull_number: int,
         title: str | None = None,
         body: str | None = None,
-        state: str | None = None,
+        state: Literal["open", "closed"] | None = None,
         base: str | None = None,
         maintainer_can_modify: bool | None = None,
-        draft: bool | None = None,
         **kwargs: Any,
     ) -> PullRequest:
         """Update a pull request for a repository."""
@@ -193,7 +192,6 @@ class GitHubKitAdapter(GitHubClientBase):
             state=state,
             base=base,
             maintainer_can_modify=maintainer_can_modify,
-            draft=draft,
             **kwargs,
         )
         return response.parsed_data

@@ -1,7 +1,7 @@
 """Base ABC for GitHub clients."""
 
 from abc import ABC, abstractmethod
-from typing import Any
+from typing import Any, Literal
 
 
 class GitHubClientBase(ABC):
@@ -36,7 +36,7 @@ class GitHubClientBase(ABC):
         assignees: list[str] | None = None,
         labels: list[str] | None = None,
         milestone: int | None = None,
-        state: str | None = None,
+        state: Literal["open", "closed"] | None = None,
         **kwargs: Any,
     ) -> Any:
         """Update an issue for a repository."""
@@ -101,10 +101,9 @@ class GitHubClientBase(ABC):
         pull_number: int,
         title: str | None = None,
         body: str | None = None,
-        state: str | None = None,
+        state: Literal["open", "closed"] | None = None,
         base: str | None = None,
         maintainer_can_modify: bool | None = None,
-        draft: bool | None = None,
         **kwargs: Any,
     ) -> Any:
         """Update a pull request for a repository."""
