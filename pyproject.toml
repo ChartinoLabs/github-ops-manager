@@ -19,7 +19,7 @@ dependencies = [
     "ruamel.yaml>=0.18,<0.19",       # For YAML processing (preserving comments)
     "pydantic>=2.0,<3.0",          # For data modeling and validation
     "githubkit>=0.12.12",         # For GitHub API interactions (supports App & PAT)
-    "typer[all]>=0.9,<1.0",        # For CLI framework (using typer with optional deps)
+    "typer>=0.9,<1.0",        # For CLI framework (using typer with optional deps)
     "pydantic>=2.11,<3.0",      # For data modeling (output UC schema)
     "pydantic-settings~=2.9.1",  # For loading config from .env/env vars
     "structlog~=25.2.0",         # For structured logging
@@ -27,12 +27,12 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
-    "pytest>=8.1.1",
-    "ruff>=0.4.4",
-    "pytest-mock>=3.14",
-    "pre-commit>=3.8.0",
     "python-dotenv>=1.0,<2.0", # For loading .env files during development
     "pytest-asyncio>=0.26.0",
+    "ruff>=0.11.8",
+    "pytest>=8.3.5",
+    "pre-commit>=4.2.0",
+    "pytest-mock>=3.14.0",
 ]
 docs = [
     "mkdocs>=1.5.3",
