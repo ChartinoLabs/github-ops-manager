@@ -70,7 +70,7 @@ def test_load_valid_yaml() -> None:
 
 def test_missing_issues_key() -> None:
     """Test YAML file missing the 'issues' key returns an empty list."""
-    processor = YAMLProcessor()
+    processor = YAMLProcessor(raise_on_error=False)
     with patch("builtins.open", m_open(YAML_MISSING_ISSUES)), patch("builtins.exit"):
         issues = processor.load_issues(["dummy.yaml"])
     assert issues == []
@@ -102,7 +102,7 @@ def test_field_mapping() -> None:
 
 def test_invalid_issue_entry(caplog: LogCaptureFixture) -> None:
     """Test that non-dict issue entries are skipped and logged."""
-    processor = YAMLProcessor()
+    processor = YAMLProcessor(raise_on_error=False)
     with patch("builtins.open", m_open(YAML_INVALID_ISSUE)), patch("builtins.exit"):
         issues = processor.load_issues(["dummy.yaml"])
     issues = [IssueModel.model_validate(issue) for issue in issues]
@@ -115,7 +115,7 @@ def test_invalid_issue_entry(caplog: LogCaptureFixture) -> None:
 
 def test_validation_error(caplog: LogCaptureFixture) -> None:
     """Test that validation errors are logged and invalid issues are skipped."""
-    processor = YAMLProcessor()
+    processor = YAMLProcessor(raise_on_error=False)
     with patch("builtins.open", m_open(YAML_VALIDATION_ERROR)), patch("builtins.exit"):
         issues = processor.load_issues(["dummy.yaml"])
     issues = [IssueModel.model_validate(issue) for issue in issues]

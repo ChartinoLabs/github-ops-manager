@@ -12,6 +12,7 @@ from pydantic import BaseModel, ValidationError
 from ruamel.yaml import YAML
 from structlog.stdlib import BoundLogger
 
+from github_ops_manager.processing.exceptions import YAMLProcessingError
 from github_ops_manager.schemas.default_issue import IssueModel
 
 logger: BoundLogger = structlog.get_logger(__name__)  # type: ignore
@@ -31,18 +32,18 @@ class YAMLProcessor:
         self,
         schema: Type[BaseModel] = IssueModel,
         field_mapping: dict[str, str] | None = None,
-        exit_on_error: bool = True,
+        raise_on_error: bool = True,
     ) -> None:
         """Initialize YAMLProcessor with a schema and optional field mapping.
 
         Args:
             schema (Type[BaseModel]): The Pydantic model to use for validation (default: IssueModel).
             field_mapping (dict[str, str] | None): Optional mapping from YAML field names to schema field names.
-            exit_on_error (bool): Whether to exit the program on validation errors.
+            raise_on_error (bool): Whether to raise a YAMLProcessingError on validation errors.
         """
         self.schema = schema
         self.field_mapping = field_mapping
-        self.exit_on_error = exit_on_error
+        self.raise_on_error = raise_on_error
 
     def load_issues(self, yaml_paths: list[str]) -> list[BaseModel]:
         """Load and validate issues from one or more YAML files."""
@@ -60,8 +61,8 @@ class YAMLProcessor:
             logger.error(
                 "One or more errors occurred during YAML processing", errors=errors
             )
-            if self.exit_on_error:
-                exit(1)
+            if self.raise_on_error:
+                raise YAMLProcessingError(errors)
         return all_issues
 
     def _load_yaml_file(
