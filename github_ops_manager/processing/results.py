@@ -4,14 +4,14 @@ from typing import Any
 
 from githubkit.versions.latest.models import Issue
 
-from github_ops_manager.processing.models import IssueSyncDecision
+from github_ops_manager.processing.models import SyncDecision
 from github_ops_manager.schemas.default_issue import IssueModel
 
 
 class IssueSynchronizationResult:
     """Contains results of the issue synchronization workflow."""
 
-    def __init__(self, desired_issue: IssueModel, github_issue: Issue, decision: IssueSyncDecision) -> None:
+    def __init__(self, desired_issue: IssueModel, github_issue: Issue, decision: SyncDecision) -> None:
         """Initialize the result with the desired issue, the actual issue, and the decision."""
         self.desired_issue = desired_issue
         self.github_issue = github_issue

@@ -3,8 +3,8 @@
 from enum import Enum
 
 
-class IssueSyncDecision(Enum):
-    """Enum for issue sync decisions."""
+class SyncDecision(Enum):
+    """Enum for sync decisions."""
 
     CREATE = "create"
     UPDATE = "update"

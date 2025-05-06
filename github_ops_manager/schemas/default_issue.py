@@ -3,6 +3,14 @@
 from pydantic import BaseModel
 
 
+class LabelModel(BaseModel):
+    """Pydantic model for a GitHub label."""
+
+    name: str
+    color: str
+    description: str | None = None
+
+
 class IssueModel(BaseModel):
     """Pydantic model for a GitHub issue."""
 
