@@ -3,14 +3,14 @@
 import asyncio
 import sys
 from pathlib import Path
-from typing import Any
 
 import typer
+from dotenv import load_dotenv
 
-from github_ops_manager.configuration import driver
-from github_ops_manager.processing.workflow_runner import (
-    run_process_issues_workflow,
-)
+from github_ops_manager.configuration.reconcile import validate_github_authentication_configuration
+from github_ops_manager.processing.workflow_runner import run_process_issues_workflow
+
+load_dotenv()
 
 typer_app = typer.Typer()
 
@@ -21,84 +21,101 @@ def get_context() -> str:
 
 
 @typer_app.callback()
-def base_cli_arguments(
+def main(
     ctx: typer.Context,
-    debug: bool = False,
-    github_api_url: str = "https://api.github.com",
-    github_pat_token: str | None = None,
-    github_app_id: int | None = None,
-    github_app_private_key_path: Path | None = None,
-    github_app_installation_id: int | None = None,
-    repo: str | None = None,
+    repo: str = typer.Argument(envvar="REPO", help="Repository name (owner/repo)."),
+    debug: bool = typer.Option(False, envvar="DEBUG", help="Enable debug mode."),
+    github_api_url: str = typer.Option("https://api.github.com", envvar="GITHUB_API_URL", help="GitHub API URL."),
+    github_pat_token: str = typer.Option(None, envvar="GITHUB_PAT_TOKEN", help="GitHub Personal Access Token."),
+    github_app_id: int = typer.Option(None, envvar="GITHUB_APP_ID", help="GitHub App ID."),
+    github_app_private_key_path: Path | None = typer.Option(None, envvar="GITHUB_APP_PRIVATE_KEY_PATH", help="Path to GitHub App private key."),
+    github_app_installation_id: int = typer.Option(None, envvar="GITHUB_APP_INSTALLATION_ID", help="GitHub App Installation ID."),
 ) -> None:
-    """Base CLI arguments for the GitHub Operations Manager."""
+    """Validate basic configuration for all commands."""
+    # Validate GitHub authentication configuration
+    github_auth_type = asyncio.run(
+        validate_github_authentication_configuration(
+            github_pat_token=github_pat_token,
+            github_app_id=github_app_id,
+            github_app_private_key_path=github_app_private_key_path,
+            github_app_installation_id=github_app_installation_id,
+        )
+    )
     ctx.ensure_object(dict)
     ctx.obj.update(
+        repo=repo,
         debug=debug,
         github_api_url=github_api_url,
         github_pat_token=github_pat_token,
         github_app_id=github_app_id,
         github_app_private_key_path=github_app_private_key_path,
         github_app_installation_id=github_app_installation_id,
-        repo=repo,
+        github_auth_type=github_auth_type,
     )
 
 
 @typer_app.command(name="process-issues")
-def process_issues_cli(ctx: typer.Context, yaml_path: Path | None = None, create_prs: bool = False) -> None:
+def process_issues_cli(
+    ctx: typer.Context,
+    yaml_path: Path = typer.Argument(envvar="YAML_PATH", help="Path to YAML file for issues."),
+    create_prs: bool = typer.Option(False, envvar="CREATE_PRS", help="Create PRs for issues."),
+) -> None:
     """Processes issues in a GitHub repository."""
-    base_args: dict[str, Any] = ctx.obj or {}
-    config = asyncio.run(
-        driver.get_process_issues_config(
-            debug=base_args.get("debug", False),
-            github_api_url=base_args.get("github_api_url", "https://api.github.com"),
-            github_pat_token=base_args.get("github_pat_token"),
-            github_app_id=base_args.get("github_app_id"),
-            github_app_private_key_path=base_args.get("github_app_private_key_path"),
-            github_app_installation_id=base_args.get("github_app_installation_id"),
-            repo=base_args.get("repo"),
+    repo = ctx.obj["repo"]
+    github_api_url = ctx.obj["github_api_url"]
+    github_pat_token = ctx.obj["github_pat_token"]
+    github_app_id = ctx.obj["github_app_id"]
+    github_app_private_key_path = ctx.obj["github_app_private_key_path"]
+    github_app_installation_id = ctx.obj["github_app_installation_id"]
+    github_auth_type = ctx.obj["github_auth_type"]
+
+    # Run the workflow
+    result = asyncio.run(
+        run_process_issues_workflow(
+            repo=repo,
+            github_pat_token=github_pat_token,
+            github_app_id=github_app_id,
+            github_app_private_key_path=github_app_private_key_path,
+            github_app_installation_id=github_app_installation_id,
+            github_auth_type=github_auth_type,
+            github_api_url=github_api_url,
             yaml_path=yaml_path,
-            create_prs=create_prs,
         )
     )
-
-    result = asyncio.run(run_process_issues_workflow(config, raise_on_yaml_error=True))
     if result.errors:
         typer.echo("Error(s) encountered while processing YAML:", err=True)
         for err in result.errors:
             typer.echo(str(err), err=True)
         sys.exit(1)
-    if config.yaml_path is not None:
-        typer.echo(f"Loaded {len(result.issues)} issues from {config.yaml_path}")
-        if result.issues:
-            typer.echo(f"First issue: {result.issues[0].model_dump()}")
-    else:
-        typer.echo("No YAML path provided. Skipping YAML processing.")
+
+    typer.echo(f"Loaded {len(result.issue_synchronization_results.results)} issues from {yaml_path}")
+    if result.issue_synchronization_results.results:
+        typer.echo(f"First issue: {result.issue_synchronization_results.results[0].desired_issue.model_dump()}")
 
 
 @typer_app.command(name="export-issues")
 def export_issues_cli(
     ctx: typer.Context,
-    output_file: Path | None = None,
-    state: str | None = None,
-    label: str | None = None,
+    output_file: Path | None = typer.Option(None, envvar="OUTPUT_FILE", help="Path to save exported issues."),
+    state: str = typer.Option(None, envvar="STATE", help="Filter issues by state (open, closed, all)."),
+    label: str = typer.Option(None, envvar="LABEL", help="Filter issues by label."),
 ) -> None:
     """Exports issues from a GitHub repository."""
-    base_args: dict[str, Any] = ctx.obj or {}
-    asyncio.run(
-        driver.get_export_issues_config(
-            debug=base_args.get("debug", False),
-            github_api_url=base_args.get("github_api_url", "https://api.github.com"),
-            github_pat_token=base_args.get("github_pat_token"),
-            github_app_id=base_args.get("github_app_id"),
-            github_app_private_key_path=base_args.get("github_app_private_key_path"),
-            github_app_installation_id=base_args.get("github_app_installation_id"),
-            repo=base_args.get("repo"),
-            output_file=output_file,
-            state=state,
-            label=label,
-        )
-    )
+    # debug and github_api_url are available in ctx.obj if needed
+    github_pat_token = ctx.obj["github_pat_token"]
+    github_app_id = ctx.obj["github_app_id"]
+    github_app_private_key_path = ctx.obj["github_app_private_key_path"]
+    github_app_installation_id = ctx.obj["github_app_installation_id"]
+    repo = ctx.obj["repo"]
+    if not repo:
+        typer.echo("Repository must be provided via --repo or REPO env var.", err=True)
+        sys.exit(1)
+    if not (github_pat_token or (github_app_id and github_app_private_key_path is not None and github_app_installation_id)):
+        typer.echo("You must provide either a GitHub PAT token or all GitHub App credentials.", err=True)
+        sys.exit(1)
+    # Here you would call your export logic, e.g. run_export_issues_workflow()
+    typer.echo(f"Exporting issues for repo {repo} to {output_file or 'stdout'}")
+    # Placeholder for actual export logic
 
 
 if __name__ == "__main__":

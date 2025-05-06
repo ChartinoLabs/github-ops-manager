@@ -1,5 +1,6 @@
 """GitHub client adapter for the githubkit library."""
 
+from pathlib import Path
 from typing import Any, Literal, Self
 
 from githubkit import Response
@@ -11,6 +12,7 @@ from githubkit.versions.latest.models import (
     PullRequestSimple,
 )
 
+from github_ops_manager.configuration.models import GitHubAuthenticationType
 from github_ops_manager.utils.github import split_repository_in_configuration
 
 from .abc import GitHubClientBase
@@ -27,10 +29,27 @@ class GitHubKitAdapter(GitHubClientBase):
         self.repo_name = repo_name
 
     @classmethod
-    async def create(cls) -> Self:
+    async def create(
+        cls,
+        repo: str,
+        github_auth_type: GitHubAuthenticationType,
+        github_pat_token: str | None,
+        github_app_id: int | None,
+        github_app_private_key_path: Path | None,
+        github_app_installation_id: int | None,
+        github_api_url: str,
+    ) -> Self:
         """Create a new GitHub client adapter."""
-        client = await get_github_client()
-        owner, repo_name = await split_repository_in_configuration()
+        owner, repo_name = await split_repository_in_configuration(repo=repo)
+        client = await get_github_client(
+            repo=repo,
+            github_auth_type=github_auth_type,
+            github_pat_token=github_pat_token,
+            github_app_id=github_app_id,
+            github_app_private_key_path=github_app_private_key_path,
+            github_app_installation_id=github_app_installation_id,
+            github_api_url=github_api_url,
+        )
         return cls(client, owner, repo_name)
 
     # Repository CRUD

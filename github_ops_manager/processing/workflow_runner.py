@@ -3,12 +3,13 @@
 """Orchestrates the main workflows (e.g., sync-to-github, export-issues)."""
 
 import time
+from pathlib import Path
 
 import structlog
 from githubkit.versions.latest.models import Issue
 from structlog.stdlib import BoundLogger
 
-from github_ops_manager.configuration.models import ProcessIssuesConfig
+from github_ops_manager.configuration.models import GitHubAuthenticationType
 from github_ops_manager.github.adapter import GitHubKitAdapter
 from github_ops_manager.processing.models import IssueSyncDecision
 from github_ops_manager.processing.results import AllIssueSynchronizationResults, IssueSynchronizationResult, ProcessIssuesResult
@@ -22,22 +23,33 @@ logger: BoundLogger = structlog.get_logger(__name__)  # type: ignore
 
 
 async def run_process_issues_workflow(
-    config: ProcessIssuesConfig,
+    repo: str,
+    github_pat_token: str | None,
+    github_app_id: int | None,
+    github_app_private_key_path: Path | None,
+    github_app_installation_id: int | None,
+    github_auth_type: GitHubAuthenticationType,
+    github_api_url: str,
+    yaml_path: Path,
     raise_on_yaml_error: bool = False,
 ) -> ProcessIssuesResult:
     """Run the process-issues workflow: load issues from YAML and return them/errors."""
-    if config.yaml_path is not None:
-        processor = YAMLProcessor(raise_on_error=raise_on_yaml_error)
-        try:
-            issues = processor.load_issues([str(config.yaml_path)])
-        except YAMLProcessingError as e:
-            return ProcessIssuesResult(AllIssueSynchronizationResults([]), errors=e.errors)
-    else:
-        return ProcessIssuesResult(AllIssueSynchronizationResults([]))
+    processor = YAMLProcessor(raise_on_error=raise_on_yaml_error)
+    try:
+        issues = processor.load_issues([str(yaml_path)])
+    except YAMLProcessingError as e:
+        return ProcessIssuesResult(AllIssueSynchronizationResults([]), errors=e.errors)
 
     # Set up GitHub adapter
-    github_adapter = await GitHubKitAdapter.create()
-
+    github_adapter = await GitHubKitAdapter.create(
+        repo=repo,
+        github_auth_type=github_auth_type,
+        github_pat_token=github_pat_token,
+        github_app_id=github_app_id,
+        github_app_private_key_path=github_app_private_key_path,
+        github_app_installation_id=github_app_installation_id,
+        github_api_url=github_api_url,
+    )
     start_time = time.time()
     logger.info("Processing issues", start_time=start_time)
     issue_sync_results = await sync_github_issues(issues, github_adapter)
