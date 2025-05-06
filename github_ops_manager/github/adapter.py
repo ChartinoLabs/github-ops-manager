@@ -28,6 +28,10 @@ class GitHubKitAdapter(GitHubClientBase):
         self.owner = owner
         self.repo_name = repo_name
 
+    def _omit_null_parameters(self, **kwargs: Any) -> dict[str, Any]:
+        """Omit parameters that are None."""
+        return {k: v for k, v in kwargs.items() if v is not None}
+
     @classmethod
     async def create(
         cls,
@@ -69,15 +73,18 @@ class GitHubKitAdapter(GitHubClientBase):
         **kwargs: Any,
     ) -> Issue:
         """Create an issue for a repository."""
-        response: Response[Issue] = await self.client.rest.issues.async_create(
-            owner=self.owner,
-            repo=self.repo_name,
+        params = self._omit_null_parameters(
             title=title,
             body=body,
             assignees=assignees,
             labels=labels,  # type: ignore
             milestone=milestone,
             **kwargs,
+        )
+        response: Response[Issue] = await self.client.rest.issues.async_create(
+            owner=self.owner,
+            repo=self.repo_name,
+            **params,
         )
         return response.parsed_data
 
@@ -93,10 +100,7 @@ class GitHubKitAdapter(GitHubClientBase):
         **kwargs: Any,
     ) -> Issue:
         """Update an issue for a repository."""
-        response: Response[Issue] = await self.client.rest.issues.async_update(
-            owner=self.owner,
-            repo=self.repo_name,
-            issue_number=issue_number,
+        params = self._omit_null_parameters(
             title=title,
             body=body,
             assignees=assignees,
@@ -104,6 +108,12 @@ class GitHubKitAdapter(GitHubClientBase):
             milestone=milestone,
             state=state,
             **kwargs,
+        )
+        response: Response[Issue] = await self.client.rest.issues.async_update(
+            owner=self.owner,
+            repo=self.repo_name,
+            issue_number=issue_number,
+            **params,
         )
         return response.parsed_data
 
@@ -126,13 +136,16 @@ class GitHubKitAdapter(GitHubClientBase):
     # Label CRUD
     async def create_label(self, name: str, color: str, description: str | None = None, **kwargs: Any) -> Label:
         """Create a label for a repository."""
-        response: Response[Label] = await self.client.rest.issues.async_create_label(
-            owner=self.owner,
-            repo=self.repo_name,
+        params = self._omit_null_parameters(
             name=name,
             color=color,
             description=description,
             **kwargs,
+        )
+        response: Response[Label] = await self.client.rest.issues.async_create_label(
+            owner=self.owner,
+            repo=self.repo_name,
+            **params,
         )
         return response.parsed_data
 
@@ -145,14 +158,17 @@ class GitHubKitAdapter(GitHubClientBase):
         **kwargs: Any,
     ) -> Label:
         """Update a label for a repository."""
-        response: Response[Label] = await self.client.rest.issues.async_update_label(
-            owner=self.owner,
-            repo=self.repo_name,
-            name=name,
+        params = self._omit_null_parameters(
             new_name=new_name,
             color=color,
             description=description,
             **kwargs,
+        )
+        response: Response[Label] = await self.client.rest.issues.async_update_label(
+            owner=self.owner,
+            repo=self.repo_name,
+            name=name,
+            **params,
         )
         return response.parsed_data
 
@@ -178,9 +194,7 @@ class GitHubKitAdapter(GitHubClientBase):
         **kwargs: Any,
     ) -> PullRequest:
         """Create a pull request for a repository."""
-        response: Response[PullRequest] = await self.client.rest.pulls.async_create(
-            owner=self.owner,
-            repo=self.repo_name,
+        params = self._omit_null_parameters(
             title=title,
             head=head,
             base=base,
@@ -188,6 +202,11 @@ class GitHubKitAdapter(GitHubClientBase):
             draft=draft,
             maintainer_can_modify=maintainer_can_modify,
             **kwargs,
+        )
+        response: Response[PullRequest] = await self.client.rest.pulls.async_create(
+            owner=self.owner,
+            repo=self.repo_name,
+            **params,
         )
         return response.parsed_data
 
@@ -202,16 +221,19 @@ class GitHubKitAdapter(GitHubClientBase):
         **kwargs: Any,
     ) -> PullRequest:
         """Update a pull request for a repository."""
-        response: Response[PullRequest] = await self.client.rest.pulls.async_update(
-            owner=self.owner,
-            repo=self.repo_name,
-            pull_number=pull_number,
+        params = self._omit_null_parameters(
             title=title,
             body=body,
             state=state,
             base=base,
             maintainer_can_modify=maintainer_can_modify,
             **kwargs,
+        )
+        response: Response[PullRequest] = await self.client.rest.pulls.async_update(
+            owner=self.owner,
+            repo=self.repo_name,
+            pull_number=pull_number,
+            **params,
         )
         return response.parsed_data
 
