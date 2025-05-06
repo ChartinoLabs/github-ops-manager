@@ -53,6 +53,8 @@ async def test_value_is_noney(value: object, expected: bool) -> None:
         ([1, 2], [2, 1], SyncDecision.UPDATE),
         ("foo", "bar", SyncDecision.UPDATE),
         ({"a": 1}, {"a": 2}, SyncDecision.UPDATE),
+        ({"key": "value"}, {"key": "value"}, SyncDecision.NOOP),
+        ({"key": "value"}, {"key": "value", "extra": "extra"}, SyncDecision.UPDATE),
     ],
 )
 async def test_compare_github_issue_field(desired: object, github: object, expected: SyncDecision) -> None:
@@ -100,6 +102,12 @@ async def test_compare_github_issue_field(desired: object, github: object, expec
             SimpleNamespace(title="A", body="B", labels=["bug"], assignees=["alice"], milestone=2),
             SyncDecision.UPDATE,
             id="update if milestone differs",
+        ),
+        pytest.param(
+            SimpleNamespace(title="A", body="B", labels=["bug"], assignees=["alice"], milestone=1),
+            SimpleNamespace(title="A", body="B", labels=["bug", "feature"], assignees=["alice"], milestone=1),
+            SyncDecision.UPDATE,
+            id="update if label needs to be removed",
         ),
     ],
 )

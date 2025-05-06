@@ -160,6 +160,20 @@ async def decide_github_issue_sync_action(desired_issue: IssueModel, github_issu
                         new_value=desired_issue.labels,
                     )
                     return SyncDecision.UPDATE
+            # Now check for labels that need to be removed
+            desired_labels_set = set(desired_issue.labels)
+            github_labels_set = set(label.name if isinstance(label, Label) else label for label in getattr(github_issue, "labels", []))
+            extra_labels = github_labels_set - desired_labels_set
+            if extra_labels:
+                logger.info(
+                    "Issue needs to be updated (labels to remove)",
+                    issue_title=desired_issue.title,
+                    issue_field="labels",
+                    current_value=github_issue.labels,
+                    new_value=desired_issue.labels,
+                    labels_to_remove=list(extra_labels),
+                )
+                return SyncDecision.UPDATE
         else:
             field_decision = await compare_github_issue_field(getattr(desired_issue, field, None), getattr(github_issue, field, None))
             if field_decision == SyncDecision.UPDATE:
