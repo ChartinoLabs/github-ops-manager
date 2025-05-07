@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 import structlog
-from githubkit.versions.latest.models import Issue, Label
+from githubkit.versions.latest.models import Issue, IssuePropLabelsItemsOneof1, Label
 from structlog.stdlib import BoundLogger
 
 from github_ops_manager.configuration.models import GitHubAuthenticationType
@@ -162,7 +162,9 @@ async def decide_github_issue_sync_action(desired_issue: IssueModel, github_issu
                     return SyncDecision.UPDATE
             # Now check for labels that need to be removed
             desired_labels_set = set(desired_issue.labels)
-            github_labels_set = set(label.name if isinstance(label, Label) else label for label in getattr(github_issue, "labels", []))
+            github_labels_set = set(
+                label.name if isinstance(label, Label | IssuePropLabelsItemsOneof1) else label for label in getattr(github_issue, "labels", [])
+            )
             extra_labels = github_labels_set - desired_labels_set
             if extra_labels:
                 logger.info(
