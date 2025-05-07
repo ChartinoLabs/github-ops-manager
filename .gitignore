@@ -52,3 +52,6 @@ Thumbs.db
 .cursorignore
 TECHNICAL_DESIGN.md
 
+# Environment variables
+.env*
+!.env.example

@@ -16,13 +16,13 @@ license = {text = "Cisco Sample Code License, Version 1.1"} # Or choose appropri
 
 dependencies = [
     # Core Functionality
-    "ruamel.yaml>=0.18,<0.19",       # For YAML processing (preserving comments)
-    "pydantic>=2.0,<3.0",          # For data modeling and validation
-    "githubkit>=0.12.12",         # For GitHub API interactions (supports App & PAT)
-    "typer>=0.9,<1.0",        # For CLI framework (using typer with optional deps)
-    "pydantic>=2.11,<3.0",      # For data modeling (output UC schema)
-    "pydantic-settings~=2.9.1",  # For loading config from .env/env vars
-    "structlog~=25.2.0",         # For structured logging
+    "ruamel.yaml>=0.18,<0.19", # For YAML processing (preserving comments)
+    "pydantic>=2.0,<3.0", # For GitHub API interactions (supports App & PAT)
+    "typer>=0.9,<1.0", # For CLI framework (using typer with optional deps)
+    "pydantic>=2.11,<3.0", # For data modeling (output UC schema)
+    "pydantic-settings~=2.9.1", # For loading config from .env/env vars
+    "structlog~=25.2.0", # For structured logging
+    "githubkit>=0.12.12",
 ]
 
 [project.optional-dependencies]
@@ -55,6 +55,10 @@ packages = ["src/github_ops_manager"] # Placeholder as requested, assuming src l
 testpaths = ["tests"]
 python_files = "test_*.py"
 asyncio_default_fixture_loop_scope = "function"
+markers = [
+    "integration"
+]
+
 
 [tool.ruff]
 line-length = 150
@@ -87,6 +91,8 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "github_ops_manager/_legacy/*" = ["E", "F", "I", "B", "W", "C90", "N", "UP", "ANN", "D", "T"]
+# Ignore print statements in integration tests as they are useful for debugging
+"tests/integration/*.py" = ["T201"]  # T201: print statement found
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"

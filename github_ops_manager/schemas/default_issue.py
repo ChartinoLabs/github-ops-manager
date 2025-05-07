@@ -3,6 +3,14 @@
 from pydantic import BaseModel
 
 
+class LabelModel(BaseModel):
+    """Pydantic model for a GitHub label."""
+
+    name: str
+    color: str
+    description: str | None = None
+
+
 class IssueModel(BaseModel):
     """Pydantic model for a GitHub issue."""
 
@@ -10,7 +18,7 @@ class IssueModel(BaseModel):
     body: str | None = None
     labels: list[str] | None = None
     assignees: list[str] | None = None
-    milestone: str | None = None
+    milestone: str | int | None = None
     state: str = "open"
 
 
