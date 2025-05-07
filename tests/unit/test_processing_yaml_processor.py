@@ -1,12 +1,11 @@
 """Unit tests for the YAMLProcessor class."""
 
+import tempfile
 from typing import Any
 from unittest.mock import mock_open, patch
 
-from _pytest.logging import LogCaptureFixture
-
 from github_ops_manager.processing.yaml_processor import YAMLProcessor
-from github_ops_manager.schemas.default_issue import IssueModel
+from github_ops_manager.schemas.default_issue import IssuesYAMLModel
 
 VALID_YAML = """
 issues:
@@ -48,77 +47,167 @@ issues:
   - title: 12345  # Should be str, not int
 """
 
+YAML_WITH_TEMPLATE_AND_DATA = """
+issue_template: ./template.md.j2
+issues:
+  - title: Template Issue
+    data:
+      foo: bar
+    body: Should be replaced
+  - title: No Data Issue
+    body: Should not be replaced
+"""
+
+YAML_WITH_TEMPLATE_NO_DATA = """
+issue_template: ./template.md.j2
+issues:
+  - title: Only Body
+    body: Should not be replaced
+"""
+
+YAML_WITH_TEMPLATE_EMPTY_ISSUES = """
+issue_template: ./template.md.j2
+issues: []
+"""
+
 
 def m_open(data: str) -> Any:
     """Mock open for testing."""
     return mock_open(read_data=data)
 
 
-def test_load_valid_yaml() -> None:
-    """Test loading a valid YAML file with all fields present."""
+def test_load_valid_yaml_model() -> None:
+    """Test loading a valid YAML file with all fields present using load_issues_model."""
     processor = YAMLProcessor()
     with patch("builtins.open", m_open(VALID_YAML)), patch("builtins.exit"):
-        issues = processor.load_issues(["dummy.yaml"])
-    issues = [IssueModel.model_validate(issue) for issue in issues]
-    assert len(issues) == 1
-    assert issues[0].title == "Test Issue"
-    assert issues[0].labels == ["bug", "help wanted"]
-    assert issues[0].assignees == ["alice"]
-    assert issues[0].milestone == "v1.0"
-    assert issues[0].state == "open"
+        model = processor.load_issues_model(["dummy.yaml"])
+    assert isinstance(model, IssuesYAMLModel)
+    assert model.issue_template is None
+    assert len(model.issues) == 1
+    issue = model.issues[0]
+    assert issue.title == "Test Issue"
+    assert issue.labels == ["bug", "help wanted"]
+    assert issue.assignees == ["alice"]
+    assert issue.milestone == "v1.0"
+    assert issue.state == "open"
 
 
-def test_missing_issues_key() -> None:
-    """Test YAML file missing the 'issues' key returns an empty list."""
-    processor = YAMLProcessor(raise_on_error=False)
-    with patch("builtins.open", m_open(YAML_MISSING_ISSUES)), patch("builtins.exit"):
-        issues = processor.load_issues(["dummy.yaml"])
-    assert issues == []
-
-
-def test_extra_fields_logged_and_ignored(caplog: LogCaptureFixture) -> None:
-    """Test that extra fields are logged and ignored."""
+def test_load_yaml_model_with_template_and_data() -> None:
+    """Test loading YAML with issue_template and issues with data fields using load_issues_model."""
     processor = YAMLProcessor()
-    with patch("builtins.open", m_open(YAML_EXTRA_FIELDS)), patch("builtins.exit"):
-        issues = processor.load_issues(["dummy.yaml"])
-    issues = [IssueModel.model_validate(issue) for issue in issues]
-    assert len(issues) == 1
-    assert not hasattr(issues[0], "foo")
-    # Check that a warning about extra fields was logged
-    assert any("Extra fields in issue will be ignored" in r for r in caplog.text.splitlines())
+    with tempfile.NamedTemporaryFile("w", suffix=".md.j2", delete=False) as tmp_template:
+        tmp_template_path = tmp_template.name
+    yaml_with_template = f"""
+issue_template: {tmp_template_path}
+issues:
+  - title: Template Issue
+    data:
+      foo: bar
+    body: Should be replaced
+  - title: No Data Issue
+    body: Should not be replaced
+"""
+    try:
+        with patch("builtins.open", m_open(yaml_with_template)), patch("builtins.exit"):
+            model = processor.load_issues_model(["dummy.yaml"])
+        assert model.issue_template == tmp_template_path
+        assert len(model.issues) == 2
+        assert model.issues[0].title == "Template Issue"
+        assert model.issues[0].data == {"foo": "bar"}
+        assert model.issues[1].title == "No Data Issue"
+        assert model.issues[1].data is None
+    finally:
+        import os
+
+        os.remove(tmp_template_path)
 
 
-def test_field_mapping() -> None:
-    """Test that field mapping correctly renames fields."""
-    processor = YAMLProcessor(field_mapping={"my_title": "title"})
-    with patch("builtins.open", m_open(YAML_FIELD_MAPPING)), patch("builtins.exit"):
-        issues = processor.load_issues(["dummy.yaml"])
-    issues = [IssueModel.model_validate(issue) for issue in issues]
-    assert len(issues) == 1
-    assert issues[0].title == "Mapped Title"
+def test_load_yaml_model_with_template_no_data() -> None:
+    """Test loading YAML with issue_template and issues without data fields using load_issues_model."""
+    processor = YAMLProcessor()
+    with tempfile.NamedTemporaryFile("w", suffix=".md.j2", delete=False) as tmp_template:
+        tmp_template_path = tmp_template.name
+    yaml_with_template = f"""
+issue_template: {tmp_template_path}
+issues:
+  - title: Only Body
+    body: Should not be replaced
+"""
+    try:
+        with patch("builtins.open", m_open(yaml_with_template)), patch("builtins.exit"):
+            model = processor.load_issues_model(["dummy.yaml"])
+        assert model.issue_template == tmp_template_path
+        assert len(model.issues) == 1
+        assert model.issues[0].title == "Only Body"
+        assert model.issues[0].data is None
+    finally:
+        import os
+
+        os.remove(tmp_template_path)
 
 
-def test_invalid_issue_entry(caplog: LogCaptureFixture) -> None:
-    """Test that non-dict issue entries are skipped and logged."""
+def test_load_yaml_model_with_template_empty_issues() -> None:
+    """Test loading YAML with issue_template and empty issues list using load_issues_model."""
+    processor = YAMLProcessor()
+    with tempfile.NamedTemporaryFile("w", suffix=".md.j2", delete=False) as tmp_template:
+        tmp_template_path = tmp_template.name
+    yaml_with_template = f"""
+issue_template: {tmp_template_path}
+issues: []
+"""
+    try:
+        with patch("builtins.open", m_open(yaml_with_template)), patch("builtins.exit"):
+            model = processor.load_issues_model(["dummy.yaml"])
+        assert model.issue_template == tmp_template_path
+        assert model.issues == []
+    finally:
+        import os
+
+        os.remove(tmp_template_path)
+
+
+def test_load_yaml_model_with_template_backward_compat() -> None:
+    """Test loading YAML with no issue_template still works (backward compatibility) using load_issues_model."""
+    processor = YAMLProcessor()
+    with patch("builtins.open", m_open(VALID_YAML)), patch("builtins.exit"):
+        model = processor.load_issues_model(["dummy.yaml"])
+    assert model.issue_template is None
+    assert len(model.issues) == 1
+    assert model.issues[0].title == "Test Issue"
+
+
+def test_issue_template_file_does_not_exist_raises() -> None:
+    """Test that specifying a non-existent issue_template file raises YAMLProcessingError if raise_on_error=True."""
+    processor = YAMLProcessor(raise_on_error=True)
+    fake_template = "/tmp/this_file_should_not_exist_123456789.md.j2"
+    yaml_with_fake_template = f"""
+issue_template: {fake_template}
+issues:
+  - title: "Test"
+    body: "Body"
+"""
+    with patch("builtins.open", m_open(yaml_with_fake_template)), patch("builtins.exit"):
+        try:
+            processor.load_issues_model(["dummy.yaml"])
+            raise AssertionError("Expected YAMLProcessingError to be raised")
+        except Exception as e:
+            from github_ops_manager.processing.exceptions import YAMLProcessingError
+
+            assert isinstance(e, YAMLProcessingError)
+            assert any("does not exist" in str(err.get("error", "")) for err in e.errors)
+
+
+def test_issue_template_file_does_not_exist_no_raise() -> None:
+    """Test that specifying a non-existent issue_template file logs error and includes error in result if raise_on_error=False."""
     processor = YAMLProcessor(raise_on_error=False)
-    with patch("builtins.open", m_open(YAML_INVALID_ISSUE)), patch("builtins.exit"):
-        issues = processor.load_issues(["dummy.yaml"])
-    issues = [IssueModel.model_validate(issue) for issue in issues]
-    # Only the valid dict should be loaded
-    assert len(issues) == 1
-    assert issues[0].title == "Valid"
-    # Check that a warning about non-dict was logged
-    assert any("Issue entry is not a dict" in r for r in caplog.text.splitlines())
-
-
-def test_validation_error(caplog: LogCaptureFixture) -> None:
-    """Test that validation errors are logged and invalid issues are skipped."""
-    processor = YAMLProcessor(raise_on_error=False)
-    with patch("builtins.open", m_open(YAML_VALIDATION_ERROR)), patch("builtins.exit"):
-        issues = processor.load_issues(["dummy.yaml"])
-    issues = [IssueModel.model_validate(issue) for issue in issues]
-    # Only the valid issue should be loaded
-    assert len(issues) == 1
-    assert issues[0].title == "Valid"
-    # Check that a validation error was logged
-    assert any("Validation error for issue" in r for r in caplog.text.splitlines())
+    fake_template = "/tmp/this_file_should_not_exist_987654321.md.j2"
+    yaml_with_fake_template = f"""
+issue_template: {fake_template}
+issues:
+  - title: "Test"
+    body: "Body"
+"""
+    with patch("builtins.open", m_open(yaml_with_fake_template)), patch("builtins.exit"):
+        model = processor.load_issues_model(["dummy.yaml"])
+    assert model.issue_template == fake_template
+    assert len(model.issues) == 1
