@@ -13,6 +13,8 @@ from githubkit import GitHub
 
 from github_ops_manager.github.adapter import GitHubKitAdapter
 
+from .utils import get_cli_script_path
+
 
 @pytest.mark.integration
 @pytest.mark.asyncio
@@ -52,12 +54,10 @@ async def test_real_github_issue_sync_cli() -> None:
         yaml.dump(yaml_issue, tmp_yaml)
         tmp_yaml_path = tmp_yaml.name
 
-    # Path to the CLI script
-    cli_script = str(Path(__file__).parent.parent.parent / "github-ops-manager")
-    assert os.path.exists(cli_script), f"CLI script not found at {cli_script}"
-    os.chmod(cli_script, 0o755)  # Ensure it's executable
-
     try:
+        # Get the CLI script path
+        cli_script = get_cli_script_path()
+
         # Construct the CLI command (global options before subcommand)
         cli_command = [cli_script, "--repo", repo_slug, "process-issues", "--yaml-path", tmp_yaml_path]
         env = os.environ.copy()
