@@ -5,6 +5,7 @@ according to a Pydantic schema. It supports field renaming, merging issues from 
 logging extra fields, and collecting validation errors. All logging is performed using structlog.
 """
 
+from pathlib import Path
 from typing import Any, Type
 
 import structlog
@@ -57,6 +58,16 @@ class YAMLProcessor:
             # Only set issue_template if present and not already set
             if issue_template is None and "issue_template" in data:
                 issue_template = data["issue_template"]
+        # Check if the template file exists if specified
+        if issue_template is not None:
+            if not Path(issue_template).exists():
+                logger.error("Specified issue_template file does not exist", template_path=issue_template)
+                errors.append({"error": f"issue_template file does not exist: {issue_template}"})
+        # Now process issues
+        for path in yaml_paths:
+            data = self._load_yaml_file(path, errors)
+            if data is None:
+                continue
             for idx, issue_dict in enumerate(self._extract_issues(data, path, errors)):
                 if not isinstance(issue_dict, dict):
                     logger.warning(
