@@ -1,14 +1,17 @@
 """Integration tests for the GitHub sync."""
 
+import asyncio
 import os
 import subprocess
 import tempfile
 import time
 import uuid
+from typing import Callable
 
 import pytest
 import yaml
 from githubkit import GitHub
+from githubkit.versions.latest.models import Issue
 
 from github_ops_manager.github.adapter import GitHubKitAdapter
 
@@ -25,9 +28,10 @@ def _write_yaml_issues_file(issues: list[dict], suffix: str = ".yaml") -> str:
 async def _wait_for_issues_on_github(
     adapter: GitHubKitAdapter,
     titles: list[str],
-    max_attempts: int = 10,
+    max_attempts: int = 25,
     sleep_seconds: int = 15,
-) -> list:
+    predicate: Callable[[list[Issue]], bool] | None = None,
+) -> list[Issue]:
     """Wait for all issues with the given titles to appear on GitHub."""
     for attempt in range(max_attempts):
         print(f"\n[{attempt + 1}/{max_attempts}] Fetching issues from GitHub...")
@@ -38,8 +42,14 @@ async def _wait_for_issues_on_github(
             print(f"  - {issue.number}: {issue.title} (created_at: {getattr(issue, 'created_at', 'N/A')})")
         if all(title in found_titles for title in titles):
             print(f"Found all issues with titles {titles}!")
-            return issues
-        print(f"[{attempt + 1}/{max_attempts}] Not all issues found, waiting {sleep_seconds} seconds and trying again...")
+            found_issues = [issue for issue in issues if issue.title in titles]
+            if predicate is None:
+                return found_issues
+            if predicate(found_issues):
+                return found_issues
+            else:
+                print("All issues found, but predicate returned False")
+        print(f"[{attempt + 1}/{max_attempts}] Not all issues found or passing predicate, waiting {sleep_seconds} seconds and trying again...")
         time.sleep(sleep_seconds)
     return await adapter.list_issues(state="all")
 
@@ -169,6 +179,84 @@ async def test_real_github_issue_sync_cli_multiple_issues() -> None:
         assert "No changes needed" in result2.stdout or "up to date" in result2.stdout.lower()
         # Clean up: close the created issues
         await _close_issues_by_title(adapter, unique_titles)
+    except subprocess.CalledProcessError as e:
+        print("STDOUT:", e.stdout)
+        print("STDERR:", e.stderr)
+        raise
+    finally:
+        os.remove(tmp_yaml_path)
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_real_github_issue_update_body() -> None:
+    """Test creating a single issue, then updating its body."""
+    token: str | None = os.environ.get("GITHUB_PAT_TOKEN")
+    if not token:
+        pytest.fail("GITHUB_PAT_TOKEN not set in environment")
+    repo_slug = os.environ["REPO"]
+    owner, repo = repo_slug.split("/")
+    client = GitHub(token)
+    adapter = GitHubKitAdapter(client, owner, repo)
+    unique_title = generate_unique_issue_title("IntegrationTestUpdate")
+    initial_body = "Initial body for update test"
+    updated_body = "Updated body for update test"
+    yaml_issues = [
+        {
+            "title": unique_title,
+            "body": initial_body,
+            "labels": ["bug"],
+            "assignees": [],
+            "milestone": None,
+        }
+    ]
+    # Assert that the issue does not exist
+    existing = await adapter.list_issues(state="all")
+    assert not any(issue.title == unique_title for issue in existing)
+    tmp_yaml_path = _write_yaml_issues_file(yaml_issues)
+    try:
+        cli_with_starting_args = get_cli_with_starting_args()
+        cli_command = cli_with_starting_args + ["process-issues", tmp_yaml_path]
+        result = subprocess.run(
+            cli_command,
+            capture_output=True,
+            text=True,
+            check=True,
+            env=os.environ.copy(),
+        )
+        assert result.returncode == 0
+        assert "Issue not found in GitHub" in result.stdout
+
+        # Wait for the issue to appear
+        issues = await _wait_for_issues_on_github(adapter, [unique_title])
+
+        # Find the created issue
+        created_issue = next((issue for issue in issues if issue.title == unique_title), None)
+        assert created_issue is not None, f"Issue {unique_title} not found in GitHub"
+        assert created_issue.body == initial_body
+
+        # Update the issue body
+        updated_issue = await adapter.update_issue(
+            issue_number=created_issue.number,
+            body=updated_body,
+        )
+        assert updated_issue.body == updated_body
+
+        def updated_issue_predicate(issues: list[Issue]) -> bool:
+            return any(issue.title == unique_title and issue.body == updated_body for issue in issues)
+
+        # Fetch again to verify update persisted, with retry for eventual consistency
+        updated_issues = await _wait_for_issues_on_github(adapter, [unique_title], predicate=updated_issue_predicate)
+
+        # Find the updated issue
+        updated_issue_fetched = next((issue for issue in updated_issues if issue.title == unique_title), None)
+        assert updated_issue_fetched is not None
+
+        # Validate the issue has been updated correctly
+        assert updated_issue_fetched.body == updated_body
+
+        # Clean up: close the created issue
+        await _close_issues_by_title(adapter, [unique_title])
     except subprocess.CalledProcessError as e:
         print("STDOUT:", e.stdout)
         print("STDERR:", e.stderr)
