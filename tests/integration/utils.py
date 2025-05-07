@@ -22,3 +22,16 @@ def get_cli_script_path() -> str:
     os.chmod(cli_script, 0o755)
 
     return cli_script
+
+
+def get_cli_with_starting_args() -> list[str]:
+    """Get the CLI script path with the starting arguments.
+
+    Returns:
+        list[str]: The CLI script path with the starting arguments.
+    """
+    repo = os.getenv("REPO")
+    if repo is None:
+        raise ValueError("REPO environment variable not set")
+    base_cli = get_cli_script_path()
+    return [base_cli, "--repo", repo]
