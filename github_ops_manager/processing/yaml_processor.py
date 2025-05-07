@@ -93,15 +93,6 @@ class YAMLProcessor:
                 raise YAMLProcessingError(errors)
         return IssuesYAMLModel(issue_template=issue_template, issues=all_issues)
 
-    def load_issues(self, yaml_paths: list[str]) -> list[IssueModel]:
-        """Load and validate issues from one or more YAML files (legacy, returns list)."""
-        return self.load_issues_model(yaml_paths).issues
-
-    def load_issues_with_template(self, yaml_paths: list[str]) -> tuple[str | None, list[IssueModel]]:
-        """Load the issue_template (if present) and issues from one or more YAML files (legacy, returns tuple)."""
-        model = self.load_issues_model(yaml_paths)
-        return model.issue_template, model.issues
-
     def _load_yaml_file(self, path: str, errors: list[dict[str, Any]]) -> dict[str, Any] | None:
         try:
             with open(path) as f:
