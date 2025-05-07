@@ -6,6 +6,7 @@ import time
 from pathlib import Path
 from typing import Any
 
+import jinja2
 import structlog
 from githubkit.versions.latest.models import Issue, IssuePropLabelsItemsOneof1, Label
 from structlog.stdlib import BoundLogger
@@ -37,10 +38,32 @@ async def run_process_issues_workflow(
     """Run the process-issues workflow: load issues from YAML and return them/errors."""
     processor = YAMLProcessor(raise_on_error=raise_on_yaml_error)
     try:
-        issues = processor.load_issues([str(yaml_path)])
+        issue_template, issues = processor.load_issues_with_template([str(yaml_path)])
     except YAMLProcessingError as e:
         return ProcessIssuesResult(AllIssueSynchronizationResults([]), errors=e.errors)
 
+    # Template rendering logic
+    if issue_template:
+        logger.info("Rendering issue bodies using template", template_path=issue_template)
+        try:
+            with open(issue_template, encoding="utf-8") as f:
+                template_content = f.read()
+            jinja_env = jinja2.Environment(undefined=jinja2.StrictUndefined)
+            template = jinja_env.from_string(template_content)
+        except Exception as e:
+            logger.error("Failed to load or parse issue template", template_path=issue_template, error=str(e))
+            return ProcessIssuesResult(AllIssueSynchronizationResults([]), errors=[{"error": str(e)}])
+        for issue in issues:
+            if issue.data is not None:
+                try:
+                    # Render with all issue fields available
+                    render_context = issue.model_dump()
+                    issue.body = template.render(**render_context)
+                except Exception as e:
+                    logger.error("Failed to render issue body with template", issue_title=issue.title, error=str(e))
+                    # Optionally, continue or set body to empty string
+                    issue.body = ""
+            # If data is None, leave body as-is
     # Set up GitHub adapter
     github_adapter = await GitHubKitAdapter.create(
         repo=repo,
