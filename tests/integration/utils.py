@@ -4,6 +4,8 @@ import os
 import uuid
 from pathlib import Path
 
+from githubkit.versions.latest.models import Issue
+
 
 def get_cli_script_path() -> str:
     """Get the path to the github-ops-manager CLI script.
@@ -41,3 +43,19 @@ def get_cli_with_starting_args() -> list[str]:
 def generate_unique_issue_title(prefix: str = "IntegrationTest") -> str:
     """Generate a unique issue title for integration tests."""
     return f"{prefix}-{uuid.uuid4()}"
+
+
+def _extract_label_names(issue: Issue) -> set[str]:
+    """Extract label names from a GitHub Issue object, handling different possible models."""
+    labels = getattr(issue, "labels", [])
+    names = set()
+    for label in labels:
+        # If label is a string
+        if isinstance(label, str):
+            names.add(label)
+        # If label is a dict or has a 'name' attribute
+        elif hasattr(label, "name"):
+            names.add(label.name)
+        elif isinstance(label, dict) and "name" in label:
+            names.add(label["name"])
+    return names
