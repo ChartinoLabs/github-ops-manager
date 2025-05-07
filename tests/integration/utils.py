@@ -34,4 +34,4 @@ def get_cli_with_starting_args() -> list[str]:
     if repo is None:
         raise ValueError("REPO environment variable not set")
     base_cli = get_cli_script_path()
-    return [base_cli, "--repo", repo]
+    return [base_cli, repo]
