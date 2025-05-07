@@ -12,65 +12,75 @@ from githubkit import GitHub
 
 from github_ops_manager.github.adapter import GitHubKitAdapter
 
-from .utils import get_cli_with_starting_args
+from .utils import generate_unique_issue_title, get_cli_with_starting_args
+
+
+def _write_yaml_issues_file(issues: list[dict], suffix: str = ".yaml") -> str:
+    """Write issues to a temporary YAML file and return the file path."""
+    with tempfile.NamedTemporaryFile("w", suffix=suffix, delete=False) as tmp_yaml:
+        yaml.dump({"issues": issues}, tmp_yaml)
+        return tmp_yaml.name
+
+
+async def _wait_for_issues_on_github(
+    adapter: GitHubKitAdapter,
+    titles: list[str],
+    max_attempts: int = 10,
+    sleep_seconds: int = 15,
+) -> list:
+    """Wait for all issues with the given titles to appear on GitHub."""
+    for attempt in range(max_attempts):
+        print(f"\n[{attempt + 1}/{max_attempts}] Fetching issues from GitHub...")
+        issues = await adapter.list_issues(state="all")
+        found_titles = [issue.title for issue in issues]
+        print(f"[{attempt + 1}/{max_attempts}] Looking for issues titled {titles} amongst {len(issues)} issues in repository:")
+        for issue in issues:
+            print(f"  - {issue.number}: {issue.title} (created_at: {getattr(issue, 'created_at', 'N/A')})")
+        if all(title in found_titles for title in titles):
+            print(f"Found all issues with titles {titles}!")
+            return issues
+        print(f"[{attempt + 1}/{max_attempts}] Not all issues found, waiting {sleep_seconds} seconds and trying again...")
+        time.sleep(sleep_seconds)
+    return await adapter.list_issues(state="all")
+
+
+async def _close_issues_by_title(adapter: GitHubKitAdapter, titles: list[str]) -> None:
+    """Close all issues with the given titles."""
+    existing = await adapter.list_issues(state="all")
+    for issue in existing:
+        if issue.title in titles:
+            print(f"\nClosing issue {issue.number}: {issue.title}")
+            await adapter.close_issue(issue.number)
 
 
 @pytest.mark.integration
 @pytest.mark.asyncio
 async def test_real_github_issue_sync_cli_single_issue() -> None:
-    """Test the GitHub Ops Manager ability to process issues via the CLI."""
-    # Load credentials and repo from environment variables (set via .env)
-    token = os.environ.get("GITHUB_PAT_TOKEN")
+    """Test the GitHub Ops Manager ability to process a single issue via the CLI."""
+    token: str | None = os.environ.get("GITHUB_PAT_TOKEN")
     if not token:
-        # Fail the test if the token is not set
         pytest.fail("GITHUB_PAT_TOKEN not set in environment")
-
     repo_slug = os.environ["REPO"]
     owner, repo = repo_slug.split("/")
-
-    # Create a githubkit client with PAT for cleanup
     client = GitHub(token)
     adapter = GitHubKitAdapter(client, owner, repo)
-
-    # Use a unique title for this test run
-    unique_title = f"IntegrationTest-{uuid.uuid4()}"
-    yaml_issue = {
-        "issues": [
-            {
-                "title": unique_title,
-                "body": "Integration test body",
-                "labels": ["bug"],
-                "assignees": [],
-                "milestone": None,
-            }
-        ]
-    }
-
+    unique_title = generate_unique_issue_title()
+    yaml_issues = [
+        {
+            "title": unique_title,
+            "body": "Integration test body",
+            "labels": ["bug"],
+            "assignees": [],
+            "milestone": None,
+        }
+    ]
     # Assert that the issue does not exist
     existing = await adapter.list_issues(state="all")
-    print("\nInitial check - existing issues:")
-    for issue in existing:
-        print(f"  - {issue.number}: {issue.title}")
     assert not any(issue.title == unique_title for issue in existing)
-
-    # Write the YAML to a temporary file
-    with tempfile.NamedTemporaryFile("w", suffix=".yaml", delete=False) as tmp_yaml:
-        yaml.dump(yaml_issue, tmp_yaml)
-        tmp_yaml_path = tmp_yaml.name
-
+    tmp_yaml_path = _write_yaml_issues_file(yaml_issues)
     try:
-        # Get the CLI command with starting args
         cli_with_starting_args = get_cli_with_starting_args()
-
-        # Construct the complete CLI command
-        cli_command = cli_with_starting_args + [
-            "process-issues",
-            tmp_yaml_path,
-        ]
-
-        print(f"\nRunning command: {' '.join(cli_command)}")
-
-        # Run the CLI to process issues (create)
+        cli_command = cli_with_starting_args + ["process-issues", tmp_yaml_path]
         result = subprocess.run(
             cli_command,
             capture_output=True,
@@ -78,31 +88,11 @@ async def test_real_github_issue_sync_cli_single_issue() -> None:
             check=True,
             env=os.environ.copy(),
         )
-
-        print(f"\nCommand result: {result.returncode}")
-        print(f"Command stdout: {result.stdout}")
-        print(f"Command stderr: {result.stderr}")
-
         assert result.returncode == 0
         assert "Issue not found in GitHub" in result.stdout
-
-        # Check the GitHub API out-of-band to verify the issue was created.
-        # Check for this three times, as GitHub API may take a moment to
-        # update.
-        max_attempts = 10
-        for attempt in range(max_attempts):
-            print(f"\n[{attempt + 1}/{max_attempts}] Fetching issues from GitHub...")
-            issues = await adapter.list_issues(state="all")
-            print(f"[{attempt + 1}/{max_attempts}] Looking for issue titled {unique_title} amongst {len(issues)} open issues in repository:")
-            for issue in issues:
-                print(f"  - {issue.number}: {issue.title} (created_at: {getattr(issue, 'created_at', 'N/A')})")
-            if any(issue.title == unique_title for issue in issues):
-                print(f"Found issue with title {unique_title}!")
-                break
-            print(f"[{attempt + 1}/{max_attempts}] Issue not found, waiting 15 seconds and trying again...")
-            time.sleep(15)
+        # Wait for the issue to appear
+        issues = await _wait_for_issues_on_github(adapter, [unique_title])
         assert any(issue.title == unique_title for issue in issues), f"Issue {unique_title} not found in GitHub"
-
         # Run the CLI again (should be NOOP)
         result2 = subprocess.run(
             cli_command,
@@ -111,20 +101,74 @@ async def test_real_github_issue_sync_cli_single_issue() -> None:
             check=True,
             env=os.environ.copy(),
         )
-
-        print(f"\nSecond run result: {result2.returncode}")
-        print(f"Second run stdout: {result2.stdout}")
-        print(f"Second run stderr: {result2.stderr}")
-
         assert result2.returncode == 0
         assert "No changes needed" in result2.stdout or "up to date" in result2.stdout.lower()
-
         # Clean up: close the created issue
-        existing = await adapter.list_issues(state="all")
-        for issue in existing:
-            if issue.title == unique_title:
-                print(f"\nClosing issue {issue.number}: {issue.title}")
-                await adapter.close_issue(issue.number)
+        await _close_issues_by_title(adapter, [unique_title])
+    except subprocess.CalledProcessError as e:
+        print("STDOUT:", e.stdout)
+        print("STDERR:", e.stderr)
+        raise
+    finally:
+        os.remove(tmp_yaml_path)
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_real_github_issue_sync_cli_multiple_issues() -> None:
+    """Test the GitHub Ops Manager ability to process multiple issues via the CLI."""
+    token: str | None = os.environ.get("GITHUB_PAT_TOKEN")
+    if not token:
+        pytest.fail("GITHUB_PAT_TOKEN not set in environment")
+    repo_slug = os.environ["REPO"]
+    owner, repo = repo_slug.split("/")
+    client = GitHub(token)
+    adapter = GitHubKitAdapter(client, owner, repo)
+    unique_titles = [generate_unique_issue_title(f"IntegrationTestMulti{i + 1}") for i in range(3)]
+    yaml_issues = [
+        {
+            "title": title,
+            "body": f"Integration test body for {title}",
+            "labels": ["bug"],
+            "assignees": [],
+            "milestone": None,
+        }
+        for title in unique_titles
+    ]
+    # Assert that the issues do not exist
+    existing = await adapter.list_issues(state="all")
+    for title in unique_titles:
+        assert not any(issue.title == title for issue in existing)
+    tmp_yaml_path = _write_yaml_issues_file(yaml_issues)
+    try:
+        cli_with_starting_args = get_cli_with_starting_args()
+        cli_command = cli_with_starting_args + ["process-issues", tmp_yaml_path]
+        result = subprocess.run(
+            cli_command,
+            capture_output=True,
+            text=True,
+            check=True,
+            env=os.environ.copy(),
+        )
+        assert result.returncode == 0
+        for title in unique_titles:
+            assert "Issue not found in GitHub" in result.stdout or title in result.stdout
+        # Wait for all issues to appear
+        issues = await _wait_for_issues_on_github(adapter, unique_titles)
+        for title in unique_titles:
+            assert any(issue.title == title for issue in issues), f"Issue {title} not found in GitHub"
+        # Run the CLI again (should be NOOP)
+        result2 = subprocess.run(
+            cli_command,
+            capture_output=True,
+            text=True,
+            check=True,
+            env=os.environ.copy(),
+        )
+        assert result2.returncode == 0
+        assert "No changes needed" in result2.stdout or "up to date" in result2.stdout.lower()
+        # Clean up: close the created issues
+        await _close_issues_by_title(adapter, unique_titles)
     except subprocess.CalledProcessError as e:
         print("STDOUT:", e.stdout)
         print("STDERR:", e.stderr)

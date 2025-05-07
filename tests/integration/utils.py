@@ -1,6 +1,7 @@
 """Utility functions for integration tests."""
 
 import os
+import uuid
 from pathlib import Path
 
 
@@ -35,3 +36,8 @@ def get_cli_with_starting_args() -> list[str]:
         raise ValueError("REPO environment variable not set")
     base_cli = get_cli_script_path()
     return [base_cli, repo]
+
+
+def generate_unique_issue_title(prefix: str = "IntegrationTest") -> str:
+    """Generate a unique issue title for integration tests."""
+    return f"{prefix}-{uuid.uuid4()}"
