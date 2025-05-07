@@ -8,7 +8,6 @@ from pathlib import Path
 
 import pytest
 import yaml
-from dotenv import load_dotenv
 from githubkit import GitHub
 
 from github_ops_manager.github.adapter import GitHubKitAdapter
@@ -20,8 +19,6 @@ from .utils import get_cli_script_path
 @pytest.mark.asyncio
 async def test_real_github_issue_sync_cli() -> None:
     """Test the GitHub Ops Manager ability to process issues via the CLI."""
-    load_dotenv(dotenv_path=".env.integration")
-
     # Load credentials and repo from environment variables (set via .env)
     token = os.environ["GITHUB_PAT_TOKEN"]
     repo_slug = os.environ["REPO"]
