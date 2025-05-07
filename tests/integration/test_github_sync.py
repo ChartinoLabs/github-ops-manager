@@ -17,7 +17,7 @@ from .utils import get_cli_with_starting_args
 
 @pytest.mark.integration
 @pytest.mark.asyncio
-async def test_real_github_issue_sync_cli() -> None:
+async def test_real_github_issue_sync_cli_single_issue() -> None:
     """Test the GitHub Ops Manager ability to process issues via the CLI."""
     # Load credentials and repo from environment variables (set via .env)
     token = os.environ.get("GITHUB_PAT_TOKEN")
