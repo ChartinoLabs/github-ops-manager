@@ -48,6 +48,29 @@ issues:
   - title: 12345  # Should be str, not int
 """
 
+YAML_WITH_TEMPLATE_AND_DATA = """
+issue_template: ./template.md.j2
+issues:
+  - title: Template Issue
+    data:
+      foo: bar
+    body: Should be replaced
+  - title: No Data Issue
+    body: Should not be replaced
+"""
+
+YAML_WITH_TEMPLATE_NO_DATA = """
+issue_template: ./template.md.j2
+issues:
+  - title: Only Body
+    body: Should not be replaced
+"""
+
+YAML_WITH_TEMPLATE_EMPTY_ISSUES = """
+issue_template: ./template.md.j2
+issues: []
+"""
+
 
 def m_open(data: str) -> Any:
     """Mock open for testing."""
@@ -122,3 +145,46 @@ def test_validation_error(caplog: LogCaptureFixture) -> None:
     assert issues[0].title == "Valid"
     # Check that a validation error was logged
     assert any("Validation error for issue" in r for r in caplog.text.splitlines())
+
+
+def test_load_issues_with_template_and_data() -> None:
+    """Test loading YAML with issue_template and issues with data fields."""
+    processor = YAMLProcessor()
+    with patch("builtins.open", m_open(YAML_WITH_TEMPLATE_AND_DATA)), patch("builtins.exit"):
+        template, issues = processor.load_issues_with_template(["dummy.yaml"])
+    assert template == "./template.md.j2"
+    assert len(issues) == 2
+    assert issues[0].title == "Template Issue"
+    assert issues[0].data == {"foo": "bar"}
+    assert issues[1].title == "No Data Issue"
+    assert issues[1].data is None
+
+
+def test_load_issues_with_template_no_data() -> None:
+    """Test loading YAML with issue_template and issues without data fields."""
+    processor = YAMLProcessor()
+    with patch("builtins.open", m_open(YAML_WITH_TEMPLATE_NO_DATA)), patch("builtins.exit"):
+        template, issues = processor.load_issues_with_template(["dummy.yaml"])
+    assert template == "./template.md.j2"
+    assert len(issues) == 1
+    assert issues[0].title == "Only Body"
+    assert issues[0].data is None
+
+
+def test_load_issues_with_template_empty_issues() -> None:
+    """Test loading YAML with issue_template and empty issues list."""
+    processor = YAMLProcessor()
+    with patch("builtins.open", m_open(YAML_WITH_TEMPLATE_EMPTY_ISSUES)), patch("builtins.exit"):
+        template, issues = processor.load_issues_with_template(["dummy.yaml"])
+    assert template == "./template.md.j2"
+    assert issues == []
+
+
+def test_load_issues_with_template_backward_compat() -> None:
+    """Test loading YAML with no issue_template still works (backward compatibility)."""
+    processor = YAMLProcessor()
+    with patch("builtins.open", m_open(VALID_YAML)), patch("builtins.exit"):
+        template, issues = processor.load_issues_with_template(["dummy.yaml"])
+    assert template is None
+    assert len(issues) == 1
+    assert issues[0].title == "Test Issue"
