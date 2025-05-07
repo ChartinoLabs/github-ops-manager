@@ -38,22 +38,22 @@ async def run_process_issues_workflow(
     """Run the process-issues workflow: load issues from YAML and return them/errors."""
     processor = YAMLProcessor(raise_on_error=raise_on_yaml_error)
     try:
-        issue_template, issues = processor.load_issues_with_template([str(yaml_path)])
+        issues_model = processor.load_issues_model([str(yaml_path)])
     except YAMLProcessingError as e:
         return ProcessIssuesResult(AllIssueSynchronizationResults([]), errors=e.errors)
 
     # Template rendering logic
-    if issue_template:
-        logger.info("Rendering issue bodies using template", template_path=issue_template)
+    if issues_model.issue_template:
+        logger.info("Rendering issue bodies using template", template_path=issues_model.issue_template)
         try:
-            with open(issue_template, encoding="utf-8") as f:
+            with open(issues_model.issue_template, encoding="utf-8") as f:
                 template_content = f.read()
             jinja_env = jinja2.Environment(undefined=jinja2.StrictUndefined)
             template = jinja_env.from_string(template_content)
         except Exception as e:
-            logger.error("Failed to load or parse issue template", template_path=issue_template, error=str(e))
+            logger.error("Failed to load or parse issue template", template_path=issues_model.issue_template, error=str(e))
             return ProcessIssuesResult(AllIssueSynchronizationResults([]), errors=[{"error": str(e)}])
-        for issue in issues:
+        for issue in issues_model.issues:
             if issue.data is not None:
                 try:
                     # Render with all issue fields available
@@ -76,7 +76,7 @@ async def run_process_issues_workflow(
     )
     start_time = time.time()
     logger.info("Processing issues", start_time=start_time)
-    issue_sync_results = await sync_github_issues(issues, github_adapter)
+    issue_sync_results = await sync_github_issues(issues_model.issues, github_adapter)
     end_time = time.time()
     total_time = end_time - start_time
     logger.info(
@@ -84,7 +84,7 @@ async def run_process_issues_workflow(
         start_time=start_time,
         end_time=end_time,
         duration=total_time,
-        desired_issue_count=len(issues),
+        desired_issue_count=len(issues_model.issues),
         issue_sync_result_count=len(issue_sync_results.results),
     )
     return ProcessIssuesResult(issue_sync_results)

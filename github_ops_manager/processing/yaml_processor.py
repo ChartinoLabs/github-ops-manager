@@ -5,7 +5,7 @@ according to a Pydantic schema. It supports field renaming, merging issues from 
 logging extra fields, and collecting validation errors. All logging is performed using structlog.
 """
 
-from typing import Any, Type, cast
+from typing import Any, Type
 
 import structlog
 from pydantic import BaseModel, ValidationError
@@ -13,7 +13,7 @@ from ruamel.yaml import YAML
 from structlog.stdlib import BoundLogger
 
 from github_ops_manager.processing.exceptions import YAMLProcessingError
-from github_ops_manager.schemas.default_issue import IssueModel
+from github_ops_manager.schemas.default_issue import IssueModel, IssuesYAMLModel
 
 logger: BoundLogger = structlog.get_logger(__name__)  # type: ignore
 
@@ -45,26 +45,8 @@ class YAMLProcessor:
         self.field_mapping = field_mapping
         self.raise_on_error = raise_on_error
 
-    def load_issues(self, yaml_paths: list[str]) -> list[IssueModel]:
-        """Load and validate issues from one or more YAML files."""
-        all_issues: list[IssueModel] = []
-        errors: list[dict[str, Any]] = []
-        for path in yaml_paths:
-            data = self._load_yaml_file(path, errors)
-            if data is None:
-                continue
-            for idx, issue_dict in enumerate(self._extract_issues(data, path, errors)):
-                issue = self._process_issue_dict(issue_dict, path, idx, errors)
-                if issue:
-                    all_issues.append(issue)
-        if errors:
-            logger.error("One or more errors occurred during YAML processing", errors=errors)
-            if self.raise_on_error:
-                raise YAMLProcessingError(errors)
-        return all_issues
-
-    def load_issues_with_template(self, yaml_paths: list[str]) -> tuple[str | None, list[IssueModel]]:
-        """Load the issue_template (if present) and issues from one or more YAML files."""
+    def load_issues_model(self, yaml_paths: list[str]) -> IssuesYAMLModel:
+        """Load and validate issues and template from one or more YAML files, returning an IssuesYAMLModel."""
         all_issues: list[IssueModel] = []
         issue_template: str | None = None
         errors: list[dict[str, Any]] = []
@@ -76,14 +58,49 @@ class YAMLProcessor:
             if issue_template is None and "issue_template" in data:
                 issue_template = data["issue_template"]
             for idx, issue_dict in enumerate(self._extract_issues(data, path, errors)):
-                issue = self._process_issue_dict(issue_dict, path, idx, errors)
-                if issue:
-                    all_issues.append(issue)
+                if not isinstance(issue_dict, dict):
+                    logger.warning(
+                        "Issue entry is not a dict and will be skipped",
+                        file=path,
+                        issue_index=idx,
+                        actual_type=type(issue_dict).__name__,
+                    )
+                    errors.append({"file": path, "issue_index": idx, "error": "Issue entry is not a dict"})
+                    continue
+                mapped: dict[str, Any] = self._apply_field_mapping(issue_dict, self.field_mapping)
+                extra_fields = set(mapped.keys()) - set(IssueModel.model_fields.keys())
+                if extra_fields:
+                    logger.warning(
+                        "Extra fields in issue will be ignored",
+                        file=path,
+                        issue_index=idx,
+                        extra_fields=list(extra_fields),
+                    )
+                filtered = {k: v for k, v in mapped.items() if k in IssueModel.model_fields}
+                try:
+                    all_issues.append(IssueModel(**filtered))
+                except ValidationError as ve:
+                    logger.error(
+                        "Validation error for issue",
+                        file=path,
+                        issue_index=idx,
+                        error=ve.errors(),
+                    )
+                    errors.append({"file": path, "issue_index": idx, "error": ve.errors()})
         if errors:
             logger.error("One or more errors occurred during YAML processing", errors=errors)
             if self.raise_on_error:
                 raise YAMLProcessingError(errors)
-        return issue_template, all_issues
+        return IssuesYAMLModel(issue_template=issue_template, issues=all_issues)
+
+    def load_issues(self, yaml_paths: list[str]) -> list[IssueModel]:
+        """Load and validate issues from one or more YAML files (legacy, returns list)."""
+        return self.load_issues_model(yaml_paths).issues
+
+    def load_issues_with_template(self, yaml_paths: list[str]) -> tuple[str | None, list[IssueModel]]:
+        """Load the issue_template (if present) and issues from one or more YAML files (legacy, returns tuple)."""
+        model = self.load_issues_model(yaml_paths)
+        return model.issue_template, model.issues
 
     def _load_yaml_file(self, path: str, errors: list[dict[str, Any]]) -> dict[str, Any] | None:
         try:
@@ -106,44 +123,6 @@ class YAMLProcessor:
             errors.append({"file": path, "error": "Missing top-level 'issues' key"})
             return []
         return data["issues"]
-
-    def _process_issue_dict(
-        self,
-        issue_dict: Any,
-        path: str,
-        idx: int,
-        errors: list[dict[str, Any]],
-    ) -> IssueModel | None:
-        if not isinstance(issue_dict, dict):
-            logger.warning(
-                "Issue entry is not a dict and will be skipped",
-                file=path,
-                issue_index=idx,
-                actual_type=type(issue_dict).__name__,
-            )
-            errors.append({"file": path, "issue_index": idx, "error": "Issue entry is not a dict"})
-            return None
-        mapped: dict[str, Any] = self._apply_field_mapping(cast(dict[str, Any], issue_dict), self.field_mapping)
-        extra_fields = set(mapped.keys()) - set(IssueModel.model_fields.keys())
-        if extra_fields:
-            logger.warning(
-                "Extra fields in issue will be ignored",
-                file=path,
-                issue_index=idx,
-                extra_fields=list(extra_fields),
-            )
-        filtered = {k: v for k, v in mapped.items() if k in IssueModel.model_fields}
-        try:
-            return IssueModel(**filtered)
-        except ValidationError as ve:
-            logger.error(
-                "Validation error for issue",
-                file=path,
-                issue_index=idx,
-                error=ve.errors(),
-            )
-            errors.append({"file": path, "issue_index": idx, "error": ve.errors()})
-            return None
 
     def _apply_field_mapping(self, issue_dict: dict[str, Any], field_mapping: dict[str, str] | None) -> dict[str, Any]:
         """Apply a field mapping (renaming) to a dictionary representing an issue.

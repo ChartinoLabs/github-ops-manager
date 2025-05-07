@@ -6,7 +6,7 @@ from unittest.mock import mock_open, patch
 from _pytest.logging import LogCaptureFixture
 
 from github_ops_manager.processing.yaml_processor import YAMLProcessor
-from github_ops_manager.schemas.default_issue import IssueModel
+from github_ops_manager.schemas.default_issue import IssueModel, IssuesYAMLModel
 
 VALID_YAML = """
 issues:
@@ -188,3 +188,62 @@ def test_load_issues_with_template_backward_compat() -> None:
     assert template is None
     assert len(issues) == 1
     assert issues[0].title == "Test Issue"
+
+
+def test_load_valid_yaml_model() -> None:
+    """Test loading a valid YAML file with all fields present using load_issues_model."""
+    processor = YAMLProcessor()
+    with patch("builtins.open", m_open(VALID_YAML)), patch("builtins.exit"):
+        model = processor.load_issues_model(["dummy.yaml"])
+    assert isinstance(model, IssuesYAMLModel)
+    assert model.issue_template is None
+    assert len(model.issues) == 1
+    issue = model.issues[0]
+    assert issue.title == "Test Issue"
+    assert issue.labels == ["bug", "help wanted"]
+    assert issue.assignees == ["alice"]
+    assert issue.milestone == "v1.0"
+    assert issue.state == "open"
+
+
+def test_load_yaml_model_with_template_and_data() -> None:
+    """Test loading YAML with issue_template and issues with data fields using load_issues_model."""
+    processor = YAMLProcessor()
+    with patch("builtins.open", m_open(YAML_WITH_TEMPLATE_AND_DATA)), patch("builtins.exit"):
+        model = processor.load_issues_model(["dummy.yaml"])
+    assert model.issue_template == "./template.md.j2"
+    assert len(model.issues) == 2
+    assert model.issues[0].title == "Template Issue"
+    assert model.issues[0].data == {"foo": "bar"}
+    assert model.issues[1].title == "No Data Issue"
+    assert model.issues[1].data is None
+
+
+def test_load_yaml_model_with_template_no_data() -> None:
+    """Test loading YAML with issue_template and issues without data fields using load_issues_model."""
+    processor = YAMLProcessor()
+    with patch("builtins.open", m_open(YAML_WITH_TEMPLATE_NO_DATA)), patch("builtins.exit"):
+        model = processor.load_issues_model(["dummy.yaml"])
+    assert model.issue_template == "./template.md.j2"
+    assert len(model.issues) == 1
+    assert model.issues[0].title == "Only Body"
+    assert model.issues[0].data is None
+
+
+def test_load_yaml_model_with_template_empty_issues() -> None:
+    """Test loading YAML with issue_template and empty issues list using load_issues_model."""
+    processor = YAMLProcessor()
+    with patch("builtins.open", m_open(YAML_WITH_TEMPLATE_EMPTY_ISSUES)), patch("builtins.exit"):
+        model = processor.load_issues_model(["dummy.yaml"])
+    assert model.issue_template == "./template.md.j2"
+    assert model.issues == []
+
+
+def test_load_yaml_model_with_template_backward_compat() -> None:
+    """Test loading YAML with no issue_template still works (backward compatibility) using load_issues_model."""
+    processor = YAMLProcessor()
+    with patch("builtins.open", m_open(VALID_YAML)), patch("builtins.exit"):
+        model = processor.load_issues_model(["dummy.yaml"])
+    assert model.issue_template is None
+    assert len(model.issues) == 1
+    assert model.issues[0].title == "Test Issue"
