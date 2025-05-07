@@ -217,6 +217,7 @@ async def test_real_github_issue_update_body() -> None:
     try:
         cli_with_starting_args = get_cli_with_starting_args()
         cli_command = cli_with_starting_args + ["process-issues", tmp_yaml_path]
+        # 1. Create the issue via CLI
         result = subprocess.run(
             cli_command,
             capture_output=True,
@@ -226,33 +227,35 @@ async def test_real_github_issue_update_body() -> None:
         )
         assert result.returncode == 0
         assert "Issue not found in GitHub" in result.stdout
-
         # Wait for the issue to appear
         issues = await _wait_for_issues_on_github(adapter, [unique_title])
-
-        # Find the created issue
         created_issue = next((issue for issue in issues if issue.title == unique_title), None)
         assert created_issue is not None, f"Issue {unique_title} not found in GitHub"
         assert created_issue.body == initial_body
 
-        # Update the issue body
-        updated_issue = await adapter.update_issue(
-            issue_number=created_issue.number,
-            body=updated_body,
-        )
-        assert updated_issue.body == updated_body
+        # 2. Update the YAML file with the new body
+        yaml_issues[0]["body"] = updated_body
+        with open(tmp_yaml_path, "w") as f:
+            yaml.dump({"issues": yaml_issues}, f)
 
+        # 3. Run the CLI again to update the issue
+        result_update = subprocess.run(
+            cli_command,
+            capture_output=True,
+            text=True,
+            check=True,
+            env=os.environ.copy(),
+        )
+        assert result_update.returncode == 0
+        assert "Updated issue" in result_update.stdout or "updated" in result_update.stdout.lower() or "No changes needed" not in result_update.stdout
+
+        # 4. Wait for the update to be reflected on GitHub
         def updated_issue_predicate(issues: list[Issue]) -> bool:
             return any(issue.title == unique_title and issue.body == updated_body for issue in issues)
 
-        # Fetch again to verify update persisted, with retry for eventual consistency
         updated_issues = await _wait_for_issues_on_github(adapter, [unique_title], predicate=updated_issue_predicate)
-
-        # Find the updated issue
         updated_issue_fetched = next((issue for issue in updated_issues if issue.title == unique_title), None)
         assert updated_issue_fetched is not None
-
-        # Validate the issue has been updated correctly
         assert updated_issue_fetched.body == updated_body
 
         # Clean up: close the created issue
