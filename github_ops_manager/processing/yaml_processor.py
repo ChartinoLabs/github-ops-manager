@@ -63,6 +63,28 @@ class YAMLProcessor:
                 raise YAMLProcessingError(errors)
         return all_issues
 
+    def load_issues_with_template(self, yaml_paths: list[str]) -> tuple[str | None, list[IssueModel]]:
+        """Load the issue_template (if present) and issues from one or more YAML files."""
+        all_issues: list[IssueModel] = []
+        issue_template: str | None = None
+        errors: list[dict[str, Any]] = []
+        for path in yaml_paths:
+            data = self._load_yaml_file(path, errors)
+            if data is None:
+                continue
+            # Only set issue_template if present and not already set
+            if issue_template is None and "issue_template" in data:
+                issue_template = data["issue_template"]
+            for idx, issue_dict in enumerate(self._extract_issues(data, path, errors)):
+                issue = self._process_issue_dict(issue_dict, path, idx, errors)
+                if issue:
+                    all_issues.append(issue)
+        if errors:
+            logger.error("One or more errors occurred during YAML processing", errors=errors)
+            if self.raise_on_error:
+                raise YAMLProcessingError(errors)
+        return issue_template, all_issues
+
     def _load_yaml_file(self, path: str, errors: list[dict[str, Any]]) -> dict[str, Any] | None:
         try:
             with open(path) as f:
