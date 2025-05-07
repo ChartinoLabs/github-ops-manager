@@ -2,9 +2,6 @@
 
 import os
 import subprocess
-import tempfile
-import time
-from typing import Callable
 
 import pytest
 import yaml
@@ -13,52 +10,14 @@ from githubkit.versions.latest.models import Issue
 
 from github_ops_manager.github.adapter import GitHubKitAdapter
 
-from .utils import _extract_label_names, generate_unique_issue_title, get_cli_with_starting_args
-
-
-def _write_yaml_issues_file(issues: list[dict], suffix: str = ".yaml") -> str:
-    """Write issues to a temporary YAML file and return the file path."""
-    with tempfile.NamedTemporaryFile("w", suffix=suffix, delete=False) as tmp_yaml:
-        yaml.dump({"issues": issues}, tmp_yaml)
-        return tmp_yaml.name
-
-
-async def _wait_for_issues_on_github(
-    adapter: GitHubKitAdapter,
-    titles: list[str],
-    max_attempts: int = 25,
-    sleep_seconds: int = 15,
-    predicate: Callable[[list[Issue]], bool] | None = None,
-) -> list[Issue]:
-    """Wait for all issues with the given titles to appear on GitHub."""
-    for attempt in range(max_attempts):
-        print(f"\n[{attempt + 1}/{max_attempts}] Fetching issues from GitHub...")
-        issues = await adapter.list_issues(state="all")
-        found_titles = [issue.title for issue in issues]
-        print(f"[{attempt + 1}/{max_attempts}] Looking for issues titled {titles} amongst {len(issues)} issues in repository:")
-        for issue in issues:
-            print(f"  - {issue.number}: {issue.title} (created_at: {getattr(issue, 'created_at', 'N/A')})")
-        if all(title in found_titles for title in titles):
-            print(f"Found all issues with titles {titles}!")
-            found_issues = [issue for issue in issues if issue.title in titles]
-            if predicate is None:
-                return found_issues
-            if predicate(found_issues):
-                return found_issues
-            else:
-                print("All issues found, but predicate returned False")
-        print(f"[{attempt + 1}/{max_attempts}] Not all issues found or passing predicate, waiting {sleep_seconds} seconds and trying again...")
-        time.sleep(sleep_seconds)
-    return await adapter.list_issues(state="all")
-
-
-async def _close_issues_by_title(adapter: GitHubKitAdapter, titles: list[str]) -> None:
-    """Close all issues with the given titles."""
-    existing = await adapter.list_issues(state="all")
-    for issue in existing:
-        if issue.title in titles:
-            print(f"\nClosing issue {issue.number}: {issue.title}")
-            await adapter.close_issue(issue.number)
+from .utils import (
+    _close_issues_by_title,
+    _extract_label_names,
+    _wait_for_issues_on_github,
+    _write_yaml_issues_file,
+    generate_unique_issue_title,
+    get_cli_with_starting_args,
+)
 
 
 @pytest.mark.integration
