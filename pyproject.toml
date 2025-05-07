@@ -93,3 +93,7 @@ convention = "google"
 
 [tool.ruff.lint.isort]
 combine-as-imports = true
+
+# Ignore print statements in integration tests as they are useful for debugging
+[tool.ruff.lint.per-file-ignores]
+"tests/integration/*.py" = ["T201"]  # T201: print statement found
