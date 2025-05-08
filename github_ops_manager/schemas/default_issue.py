@@ -13,6 +13,16 @@ class LabelModel(BaseModel):
     description: str | None = None
 
 
+class PullRequestModel(BaseModel):
+    """Pydantic model for a GitHub pull request definition attached to an issue."""
+
+    title: str
+    branch: str | None = None
+    body: str | None = None
+    files: list[str]
+    labels: list[str] | None = None
+
+
 class IssueModel(BaseModel):
     """Pydantic model for a GitHub issue."""
 
@@ -23,6 +33,7 @@ class IssueModel(BaseModel):
     milestone: str | int | None = None
     state: str = "open"
     data: dict[str, Any] | None = None
+    pull_request: PullRequestModel | None = None
 
 
 class IssuesYAMLModel(BaseModel):
