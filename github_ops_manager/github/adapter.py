@@ -5,6 +5,7 @@ from typing import Any, Literal, Self
 
 import structlog
 from githubkit import Response
+from githubkit.exception import RequestFailed
 from githubkit.versions.latest.models import (
     FullRepository,
     Issue,
@@ -273,8 +274,18 @@ class GitHubKitAdapter(GitHubClientBase):
 
     async def create_branch(self, branch_name: str, base_branch: str) -> None:
         """Create a new branch from the base branch."""
-        # Get the latest commit SHA of the base branch
-        base_ref = await self.client.rest.git.async_get_ref(owner=self.owner, repo=self.repo_name, ref=f"heads/{base_branch}")
+        try:
+            base_ref = await self.client.rest.git.async_get_ref(owner=self.owner, repo=self.repo_name, ref=f"heads/{base_branch}")
+        except RequestFailed as exc:
+            # If a 409 conflict is raise, it means the base branch is empty.
+            # The default branch must contain at least one commit before a PR
+            # into the default branch can be created.
+            if exc.response.status_code == 409:
+                logger.error(
+                    f"A 409 Conflict was returned when accessing base branch '{base_branch}'. This may be because the default branch is empty. "
+                    f"You must have at least one commit on the default branch ('{base_branch}') to create a pull request against it."
+                )
+            raise
         sha = base_ref.parsed_data.object.sha
         # Create the new branch
         await self.client.rest.git.async_create_ref(
