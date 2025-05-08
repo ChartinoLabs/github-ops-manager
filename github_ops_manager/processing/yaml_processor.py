@@ -14,7 +14,7 @@ from ruamel.yaml import YAML
 from structlog.stdlib import BoundLogger
 
 from github_ops_manager.processing.exceptions import YAMLProcessingError
-from github_ops_manager.schemas.default_issue import IssueModel, IssuesYAMLModel
+from github_ops_manager.schemas.default_issue import IssueModel, IssuesYAMLModel, PullRequestModel
 
 logger: BoundLogger = structlog.get_logger(__name__)  # type: ignore
 
@@ -88,6 +88,19 @@ class YAMLProcessor:
                         extra_fields=list(extra_fields),
                     )
                 filtered = {k: v for k, v in mapped.items() if k in IssueModel.model_fields}
+                # Validate pull_request if present
+                if "pull_request" in filtered and filtered["pull_request"] is not None:
+                    try:
+                        filtered["pull_request"] = PullRequestModel(**filtered["pull_request"])
+                    except ValidationError as ve:
+                        logger.error(
+                            "Validation error for pull_request",
+                            file=path,
+                            issue_index=idx,
+                            error=ve.errors(),
+                        )
+                        errors.append({"file": path, "issue_index": idx, "error": ve.errors(), "field": "pull_request"})
+                        filtered["pull_request"] = None
                 try:
                     all_issues.append(IssueModel(**filtered))
                 except ValidationError as ve:
