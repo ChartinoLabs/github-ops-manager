@@ -89,13 +89,9 @@ async def run_process_issues_workflow(
         issue_sync_result_count=len(issue_sync_results.results),
     )
     # --- PR/branch orchestration integration ---
-    try:
-        repo_info = await github_adapter.get_repository()
-        default_branch = repo_info.default_branch
-        await process_pull_requests_for_issues(issues_model.issues, github_adapter, default_branch)
-    except Exception as e:
-        logger.error("Error during PR processing", error=str(e))
-    # ---
+    repo_info = await github_adapter.get_repository()
+    default_branch = repo_info.default_branch
+    await process_pull_requests_for_issues(issues_model.issues, github_adapter, default_branch)
     return ProcessIssuesResult(issue_sync_results)
 
 
