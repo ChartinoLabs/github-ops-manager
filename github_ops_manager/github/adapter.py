@@ -1,9 +1,12 @@
 """GitHub client adapter for the githubkit library."""
 
+from functools import wraps
 from pathlib import Path
-from typing import Any, Literal, Self
+from typing import Any, Awaitable, Callable, Literal, Self, TypeVar
 
+import structlog
 from githubkit import Response
+from githubkit.exception import RequestFailed
 from githubkit.versions.latest.models import (
     FullRepository,
     Issue,
@@ -17,6 +20,41 @@ from github_ops_manager.utils.github import split_repository_in_configuration
 
 from .abc import GitHubClientBase
 from .client import GitHubClient, get_github_client
+
+logger = structlog.get_logger(__name__)
+
+F = TypeVar("F", bound=Callable[..., Awaitable[Any]])
+
+
+def handle_github_422(func: F) -> F:
+    """Decorator to handle GitHub 422 Unprocessable Entity errors, logging and raising with details."""
+
+    @wraps(func)
+    async def wrapper(*args: Any, **kwargs: Any) -> Any:
+        try:
+            return await func(*args, **kwargs)
+        except RequestFailed as exc:
+            if exc.response.status_code == 422:
+                try:
+                    error_data = exc.response.json()
+                except Exception:
+                    error_data = {}
+                message = error_data.get("message", "Unprocessable Entity")
+                errors = error_data.get("errors", [])
+                logger.error(
+                    "GitHub 422 Unprocessable Entity",
+                    function=func.__name__,
+                    message=message,
+                    errors=errors,
+                    url=getattr(exc.response, "url", None),
+                    status_code=422,
+                )
+                raise ValueError(
+                    f"GitHub 422 error in {func.__name__}: {message} | errors: {errors} | url: {getattr(exc.response, 'url', None)}"
+                ) from exc
+            raise
+
+    return wrapper  # type: ignore
 
 
 class GitHubKitAdapter(GitHubClientBase):
@@ -63,6 +101,7 @@ class GitHubKitAdapter(GitHubClientBase):
         return response.parsed_data
 
     # Issue CRUD
+    @handle_github_422
     async def create_issue(
         self,
         title: str,
@@ -88,6 +127,7 @@ class GitHubKitAdapter(GitHubClientBase):
         )
         return response.parsed_data
 
+    @handle_github_422
     async def update_issue(
         self,
         issue_number: int,
@@ -122,6 +162,7 @@ class GitHubKitAdapter(GitHubClientBase):
         response: Response[list[Issue]] = await self.client.rest.issues.async_list_for_repo(owner=self.owner, repo=self.repo_name, **kwargs)
         return response.parsed_data
 
+    @handle_github_422
     async def close_issue(self, issue_number: int, **kwargs: Any) -> Issue:
         """Close an issue for a repository."""
         response: Response[Issue] = await self.client.rest.issues.async_update(
@@ -134,6 +175,7 @@ class GitHubKitAdapter(GitHubClientBase):
         return response.parsed_data
 
     # Label CRUD
+    @handle_github_422
     async def create_label(self, name: str, color: str, description: str | None = None, **kwargs: Any) -> Label:
         """Create a label for a repository."""
         params = self._omit_null_parameters(
@@ -149,6 +191,7 @@ class GitHubKitAdapter(GitHubClientBase):
         )
         return response.parsed_data
 
+    @handle_github_422
     async def update_label(
         self,
         name: str,
@@ -183,6 +226,7 @@ class GitHubKitAdapter(GitHubClientBase):
         return response.parsed_data
 
     # Pull Request CRUD
+    @handle_github_422
     async def create_pull_request(
         self,
         title: str,
@@ -210,6 +254,7 @@ class GitHubKitAdapter(GitHubClientBase):
         )
         return response.parsed_data
 
+    @handle_github_422
     async def update_pull_request(
         self,
         pull_number: int,
@@ -242,11 +287,13 @@ class GitHubKitAdapter(GitHubClientBase):
         response: Response[list[PullRequestSimple]] = await self.client.rest.pulls.async_list(owner=self.owner, repo=self.repo_name, **kwargs)
         return response.parsed_data
 
+    @handle_github_422
     async def merge_pull_request(self, pull_number: int, **kwargs: Any) -> Any:
         """Merge a pull request for a repository."""
         response = await self.client.rest.pulls.async_merge(owner=self.owner, repo=self.repo_name, pull_number=pull_number, **kwargs)
         return response.parsed_data
 
+    @handle_github_422
     async def close_pull_request(self, pull_number: int, **kwargs: Any) -> PullRequest:
         """Close a pull request for a repository."""
         response: Response[PullRequest] = await self.client.rest.pulls.async_update(
@@ -257,3 +304,77 @@ class GitHubKitAdapter(GitHubClientBase):
             **kwargs,
         )
         return response.parsed_data
+
+    async def branch_exists(self, branch_name: str) -> bool:
+        """Check if a branch exists in the repository."""
+        try:
+            await self.client.rest.repos.async_get_branch(owner=self.owner, repo=self.repo_name, branch=branch_name)
+            return True
+        except Exception as e:
+            if "not found" in str(e).lower():
+                return False
+            raise
+
+    @handle_github_422
+    async def create_branch(self, branch_name: str, base_branch: str) -> None:
+        """Create a new branch from the base branch."""
+        try:
+            base_ref = await self.client.rest.git.async_get_ref(owner=self.owner, repo=self.repo_name, ref=f"heads/{base_branch}")
+        except RequestFailed as exc:
+            # If a 409 conflict is raise, it means the base branch is empty.
+            # The default branch must contain at least one commit before a PR
+            # into the default branch can be created.
+            if exc.response.status_code == 409:
+                logger.error(
+                    f"A 409 Conflict was returned when accessing base branch '{base_branch}'. This may be because the default branch is empty. "
+                    f"You must have at least one commit on the default branch ('{base_branch}') to create a pull request against it."
+                )
+            raise
+        sha = base_ref.parsed_data.object_.sha
+        # Create the new branch
+        await self.client.rest.git.async_create_ref(
+            owner=self.owner,
+            repo=self.repo_name,
+            ref=f"refs/heads/{branch_name}",
+            sha=sha,
+        )
+        logger.info("Created branch", branch=branch_name, base_branch=base_branch)
+
+    @handle_github_422
+    async def commit_files_to_branch(
+        self,
+        branch_name: str,
+        files: list[tuple[str, str]],  # (file_path, file_content)
+        commit_message: str,
+    ) -> None:
+        """Commit or update files on a branch using the GitHub Contents API."""
+        for file_path, file_content in files:
+            # Check if the file exists to get its SHA (required for update)
+            try:
+                file_resp = await self.client.rest.repos.async_get_content(
+                    owner=self.owner,
+                    repo=self.repo_name,
+                    path=file_path,
+                    ref=branch_name,
+                )
+                file_sha = file_resp.parsed_data.sha
+            except Exception as e:
+                if "not found" in str(e).lower():
+                    file_sha = None
+                else:
+                    raise
+            import base64
+
+            encoded_content = base64.b64encode(file_content.encode("utf-8")).decode("utf-8")
+            params = {
+                "owner": self.owner,
+                "repo": self.repo_name,
+                "path": file_path,
+                "message": commit_message,
+                "content": encoded_content,
+                "branch": branch_name,
+            }
+            if file_sha:
+                params["sha"] = file_sha
+            await self.client.rest.repos.async_create_or_update_file_contents(**params)
+            logger.info("Committed file to branch", file=file_path, branch=branch_name)
