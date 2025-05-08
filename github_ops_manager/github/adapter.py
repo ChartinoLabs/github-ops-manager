@@ -286,7 +286,7 @@ class GitHubKitAdapter(GitHubClientBase):
                     f"You must have at least one commit on the default branch ('{base_branch}') to create a pull request against it."
                 )
             raise
-        sha = base_ref.parsed_data.object.sha
+        sha = base_ref.parsed_data.ref
         # Create the new branch
         await self.client.rest.git.async_create_ref(
             owner=self.owner,
