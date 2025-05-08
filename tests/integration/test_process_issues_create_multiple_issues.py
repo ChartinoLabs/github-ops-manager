@@ -4,15 +4,14 @@ import os
 import subprocess
 
 import pytest
-from githubkit import GitHub
 
-from github_ops_manager.github.adapter import GitHubKitAdapter
 from tests.integration.utils import (
     _close_issues_by_title,
     _wait_for_issues_on_github,
     _write_yaml_issues_file,
     generate_unique_issue_title,
-    get_cli_with_starting_args,
+    get_github_adapter,
+    run_process_issues_cli,
 )
 
 
@@ -23,10 +22,8 @@ async def test_real_github_issue_sync_cli_multiple_issues() -> None:
     token: str | None = os.environ.get("GITHUB_PAT_TOKEN")
     if not token:
         pytest.fail("GITHUB_PAT_TOKEN not set in environment")
-    repo_slug = os.environ["REPO"]
-    owner, repo = repo_slug.split("/")
-    client = GitHub(token)
-    adapter = GitHubKitAdapter(client, owner, repo)
+
+    adapter = get_github_adapter()
     unique_titles = [generate_unique_issue_title(f"IntegrationTestMulti{i + 1}") for i in range(3)]
     yaml_issues = [
         {
@@ -44,15 +41,7 @@ async def test_real_github_issue_sync_cli_multiple_issues() -> None:
         assert not any(issue.title == title for issue in existing)
     tmp_yaml_path = _write_yaml_issues_file(yaml_issues)
     try:
-        cli_with_starting_args = get_cli_with_starting_args()
-        cli_command = cli_with_starting_args + ["process-issues", tmp_yaml_path]
-        result = subprocess.run(
-            cli_command,
-            capture_output=True,
-            text=True,
-            check=True,
-            env=os.environ.copy(),
-        )
+        result = run_process_issues_cli(tmp_yaml_path)
         assert result.returncode == 0
         for title in unique_titles:
             assert "Issue not found in GitHub" in result.stdout or title in result.stdout
@@ -61,20 +50,12 @@ async def test_real_github_issue_sync_cli_multiple_issues() -> None:
         for title in unique_titles:
             assert any(issue.title == title for issue in issues), f"Issue {title} not found in GitHub"
         # Run the CLI again (should be NOOP)
-        result2 = subprocess.run(
-            cli_command,
-            capture_output=True,
-            text=True,
-            check=True,
-            env=os.environ.copy(),
-        )
+        result2 = run_process_issues_cli(tmp_yaml_path)
         assert result2.returncode == 0
         assert "No changes needed" in result2.stdout or "up to date" in result2.stdout.lower()
         # Clean up: close the created issues
         await _close_issues_by_title(adapter, unique_titles)
-    except subprocess.CalledProcessError as e:
-        print("STDOUT:", e.stdout)
-        print("STDERR:", e.stderr)
+    except subprocess.CalledProcessError:
         raise
     finally:
         os.remove(tmp_yaml_path)

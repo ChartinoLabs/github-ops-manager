@@ -5,16 +5,15 @@ import subprocess
 
 import pytest
 import yaml
-from githubkit import GitHub
 from githubkit.versions.latest.models import Issue
 
-from github_ops_manager.github.adapter import GitHubKitAdapter
 from tests.integration.utils import (
     _close_issues_by_title,
     _wait_for_issues_on_github,
     _write_yaml_issues_file,
     generate_unique_issue_title,
-    get_cli_with_starting_args,
+    get_github_adapter,
+    run_process_issues_cli,
 )
 
 
@@ -27,8 +26,7 @@ async def test_real_github_issue_update_body() -> None:
         pytest.fail("GITHUB_PAT_TOKEN not set in environment")
     repo_slug = os.environ["REPO"]
     owner, repo = repo_slug.split("/")
-    client = GitHub(token)
-    adapter = GitHubKitAdapter(client, owner, repo)
+    adapter = get_github_adapter()
     unique_title = generate_unique_issue_title("IntegrationTestUpdate")
     initial_body = "Initial body for update test"
     updated_body = "Updated body for update test"
@@ -46,16 +44,8 @@ async def test_real_github_issue_update_body() -> None:
     assert not any(issue.title == unique_title for issue in existing)
     tmp_yaml_path = _write_yaml_issues_file(yaml_issues)
     try:
-        cli_with_starting_args = get_cli_with_starting_args()
-        cli_command = cli_with_starting_args + ["process-issues", tmp_yaml_path]
         # 1. Create the issue via CLI
-        result = subprocess.run(
-            cli_command,
-            capture_output=True,
-            text=True,
-            check=True,
-            env=os.environ.copy(),
-        )
+        result = run_process_issues_cli(tmp_yaml_path)
         assert result.returncode == 0
         assert "Issue not found in GitHub" in result.stdout
         # Wait for the issue to appear
@@ -70,13 +60,7 @@ async def test_real_github_issue_update_body() -> None:
             yaml.dump({"issues": yaml_issues}, f)
 
         # 3. Run the CLI again to update the issue
-        result_update = subprocess.run(
-            cli_command,
-            capture_output=True,
-            text=True,
-            check=True,
-            env=os.environ.copy(),
-        )
+        result_update = run_process_issues_cli(tmp_yaml_path)
         assert result_update.returncode == 0
         assert "Updated issue" in result_update.stdout or "updated" in result_update.stdout.lower() or "No changes needed" not in result_update.stdout
 
@@ -91,9 +75,7 @@ async def test_real_github_issue_update_body() -> None:
 
         # Clean up: close the created issue
         await _close_issues_by_title(adapter, [unique_title])
-    except subprocess.CalledProcessError as e:
-        print("STDOUT:", e.stdout)
-        print("STDERR:", e.stderr)
+    except subprocess.CalledProcessError:
         raise
     finally:
         os.remove(tmp_yaml_path)

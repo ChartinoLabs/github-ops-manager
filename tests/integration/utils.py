@@ -1,6 +1,7 @@
 """Utility functions for integration tests."""
 
 import os
+import subprocess
 import tempfile
 import time
 import uuid
@@ -110,3 +111,37 @@ async def _close_issues_by_title(adapter: GitHubKitAdapter, titles: list[str]) -
         if issue.title in titles:
             print(f"\nClosing issue {issue.number}: {issue.title}")
             await adapter.close_issue(issue.number)
+
+
+def get_github_adapter() -> GitHubKitAdapter:
+    """Initialize and return a GitHubKitAdapter using environment variables for token and repo."""
+    import pytest  # Local import to avoid unnecessary dependency for non-test usage
+    from githubkit import GitHub
+
+    token: str | None = os.environ.get("GITHUB_PAT_TOKEN")
+    if not token:
+        pytest.fail("GITHUB_PAT_TOKEN not set in environment")
+    repo_slug: str = os.environ["REPO"]
+    owner, repo = repo_slug.split("/")
+    client = GitHub(token)
+    return GitHubKitAdapter(client, owner, repo)
+
+
+def run_process_issues_cli(yaml_path: str) -> subprocess.CompletedProcess[str]:
+    """Run the process-issues CLI command with the given YAML file.
+
+    Returns the CompletedProcess object.
+    Raises subprocess.CalledProcessError if the command fails.
+    """
+    cli_with_starting_args = get_cli_with_starting_args()
+    cli_command = cli_with_starting_args + ["process-issues", yaml_path]
+    result = subprocess.run(
+        cli_command,
+        capture_output=True,
+        text=True,
+        check=True,
+        env=os.environ.copy(),
+    )
+    print("\nCLI STDOUT:\n", result.stdout)
+    print("\nCLI STDERR:\n", result.stderr)
+    return result
