@@ -5,7 +5,6 @@ from typing import Any, Literal, Self
 
 import structlog
 from githubkit import Response
-from githubkit.rest import RestError
 from githubkit.versions.latest.models import (
     FullRepository,
     Issue,
@@ -264,39 +263,22 @@ class GitHubKitAdapter(GitHubClientBase):
 
     async def branch_exists(self, branch_name: str) -> bool:
         """Check if a branch exists in the repository."""
-        try:
-            await self.client.rest.repos.async_get_branch(owner=self.owner, repo=self.repo_name, branch=branch_name)
-            return True
-        except RestError as e:
-            if e.response.status_code == 404:
-                logger.info("Branch not found", branch=branch_name)
-                return False
-            logger.error("GitHub REST error when checking branch", branch=branch_name, error=str(e))
-            raise
-        except Exception as e:
-            logger.error("Unexpected error when checking branch", branch=branch_name, error=str(e))
-            raise
+        await self.client.rest.repos.async_get_branch(owner=self.owner, repo=self.repo_name, branch=branch_name)
+        return True
 
     async def create_branch(self, branch_name: str, base_branch: str) -> None:
         """Create a new branch from the base branch."""
-        try:
-            # Get the latest commit SHA of the base branch
-            base_ref = await self.client.rest.git.async_get_ref(owner=self.owner, repo=self.repo_name, ref=f"heads/{base_branch}")
-            sha = base_ref.parsed_data.object.sha
-            # Create the new branch
-            await self.client.rest.git.async_create_ref(
-                owner=self.owner,
-                repo=self.repo_name,
-                ref=f"refs/heads/{branch_name}",
-                sha=sha,
-            )
-            logger.info("Created branch", branch=branch_name, base_branch=base_branch)
-        except RestError as e:
-            logger.error("GitHub REST error when creating branch", branch=branch_name, base_branch=base_branch, error=str(e))
-            raise
-        except Exception as e:
-            logger.error("Unexpected error when creating branch", branch=branch_name, base_branch=base_branch, error=str(e))
-            raise
+        # Get the latest commit SHA of the base branch
+        base_ref = await self.client.rest.git.async_get_ref(owner=self.owner, repo=self.repo_name, ref=f"heads/{base_branch}")
+        sha = base_ref.parsed_data.object.sha
+        # Create the new branch
+        await self.client.rest.git.async_create_ref(
+            owner=self.owner,
+            repo=self.repo_name,
+            ref=f"refs/heads/{branch_name}",
+            sha=sha,
+        )
+        logger.info("Created branch", branch=branch_name, base_branch=base_branch)
 
     async def commit_files_to_branch(
         self,
@@ -305,48 +287,30 @@ class GitHubKitAdapter(GitHubClientBase):
         commit_message: str,
     ) -> None:
         """Commit or update files on a branch using the GitHub Contents API."""
-        try:
-            for file_path, file_content in files:
-                try:
-                    # Check if the file exists to get its SHA (required for update)
-                    try:
-                        file_resp = await self.client.rest.repos.async_get_content(
-                            owner=self.owner,
-                            repo=self.repo_name,
-                            path=file_path,
-                            ref=branch_name,
-                        )
-                        file_sha = file_resp.parsed_data.sha
-                    except RestError as e:
-                        if e.response.status_code == 404:
-                            file_sha = None
-                        else:
-                            logger.error("GitHub REST error when checking file existence", file=file_path, branch=branch_name, error=str(e))
-                            raise
-                    import base64
+        for file_path, file_content in files:
+            # Check if the file exists to get its SHA (required for update)
+            try:
+                file_resp = await self.client.rest.repos.async_get_content(
+                    owner=self.owner,
+                    repo=self.repo_name,
+                    path=file_path,
+                    ref=branch_name,
+                )
+                file_sha = file_resp.parsed_data.sha
+            except Exception:
+                file_sha = None
+            import base64
 
-                    encoded_content = base64.b64encode(file_content.encode("utf-8")).decode("utf-8")
-                    params = {
-                        "owner": self.owner,
-                        "repo": self.repo_name,
-                        "path": file_path,
-                        "message": commit_message,
-                        "content": encoded_content,
-                        "branch": branch_name,
-                    }
-                    if file_sha:
-                        params["sha"] = file_sha
-                    await self.client.rest.repos.async_create_or_update_file_contents(**params)
-                    logger.info("Committed file to branch", file=file_path, branch=branch_name)
-                except RestError as e:
-                    logger.error("GitHub REST error during file commit", file=file_path, branch=branch_name, error=str(e))
-                    raise
-                except Exception as e:
-                    logger.error("Unexpected error during file commit", file=file_path, branch=branch_name, error=str(e))
-                    raise
-        except RestError as e:
-            logger.error("GitHub REST error during commit_files_to_branch", branch=branch_name, error=str(e))
-            raise
-        except Exception as e:
-            logger.error("Unexpected error during commit_files_to_branch", branch=branch_name, error=str(e))
-            raise
+            encoded_content = base64.b64encode(file_content.encode("utf-8")).decode("utf-8")
+            params = {
+                "owner": self.owner,
+                "repo": self.repo_name,
+                "path": file_path,
+                "message": commit_message,
+                "content": encoded_content,
+                "branch": branch_name,
+            }
+            if file_sha:
+                params["sha"] = file_sha
+            await self.client.rest.repos.async_create_or_update_file_contents(**params)
+            logger.info("Committed file to branch", file=file_path, branch=branch_name)
