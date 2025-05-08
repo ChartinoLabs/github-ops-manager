@@ -110,3 +110,17 @@ async def _close_issues_by_title(adapter: GitHubKitAdapter, titles: list[str]) -
         if issue.title in titles:
             print(f"\nClosing issue {issue.number}: {issue.title}")
             await adapter.close_issue(issue.number)
+
+
+def get_github_adapter() -> GitHubKitAdapter:
+    """Initialize and return a GitHubKitAdapter using environment variables for token and repo."""
+    import pytest  # Local import to avoid unnecessary dependency for non-test usage
+    from githubkit import GitHub
+
+    token: str | None = os.environ.get("GITHUB_PAT_TOKEN")
+    if not token:
+        pytest.fail("GITHUB_PAT_TOKEN not set in environment")
+    repo_slug: str = os.environ["REPO"]
+    owner, repo = repo_slug.split("/")
+    client = GitHub(token)
+    return GitHubKitAdapter(client, owner, repo)

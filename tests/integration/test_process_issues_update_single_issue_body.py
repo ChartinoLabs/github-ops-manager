@@ -5,16 +5,15 @@ import subprocess
 
 import pytest
 import yaml
-from githubkit import GitHub
 from githubkit.versions.latest.models import Issue
 
-from github_ops_manager.github.adapter import GitHubKitAdapter
 from tests.integration.utils import (
     _close_issues_by_title,
     _wait_for_issues_on_github,
     _write_yaml_issues_file,
     generate_unique_issue_title,
     get_cli_with_starting_args,
+    get_github_adapter,
 )
 
 
@@ -27,8 +26,7 @@ async def test_real_github_issue_update_body() -> None:
         pytest.fail("GITHUB_PAT_TOKEN not set in environment")
     repo_slug = os.environ["REPO"]
     owner, repo = repo_slug.split("/")
-    client = GitHub(token)
-    adapter = GitHubKitAdapter(client, owner, repo)
+    adapter = get_github_adapter()
     unique_title = generate_unique_issue_title("IntegrationTestUpdate")
     initial_body = "Initial body for update test"
     updated_body = "Updated body for update test"

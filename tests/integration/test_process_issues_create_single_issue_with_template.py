@@ -5,23 +5,21 @@ import subprocess
 import tempfile
 
 import pytest
-from githubkit import GitHub
 
-from github_ops_manager.github.adapter import GitHubKitAdapter
-from tests.integration.utils import _close_issues_by_title, _wait_for_issues_on_github, generate_unique_issue_title, get_cli_with_starting_args
+from tests.integration.utils import (
+    _close_issues_by_title,
+    _wait_for_issues_on_github,
+    generate_unique_issue_title,
+    get_cli_with_starting_args,
+    get_github_adapter,
+)
 
 
 @pytest.mark.integration
 @pytest.mark.asyncio
 async def test_real_github_issue_sync_cli_single_issue_with_template() -> None:
     """Test issue creation with body rendered from a Jinja2 template using 'issue_template' and 'data'."""
-    token: str | None = os.environ.get("GITHUB_PAT_TOKEN")
-    if not token:
-        pytest.fail("GITHUB_PAT_TOKEN not set in environment")
-    repo_slug = os.environ["REPO"]
-    owner, repo = repo_slug.split("/")
-    client = GitHub(token)
-    adapter = GitHubKitAdapter(client, owner, repo)
+    adapter = get_github_adapter()
     unique_title = generate_unique_issue_title()
     template_content = """# {{ title }}\n\n**Component:** {{ data.component }}\n**Severity:** {{ data.severity }}\n"""
     yaml_issues = [
