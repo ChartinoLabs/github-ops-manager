@@ -1,7 +1,8 @@
 """GitHub client adapter for the githubkit library."""
 
+from functools import wraps
 from pathlib import Path
-from typing import Any, Literal, Self
+from typing import Any, Awaitable, Callable, Literal, Self, TypeVar
 
 import structlog
 from githubkit import Response
@@ -21,6 +22,39 @@ from .abc import GitHubClientBase
 from .client import GitHubClient, get_github_client
 
 logger = structlog.get_logger(__name__)
+
+F = TypeVar("F", bound=Callable[..., Awaitable[Any]])
+
+
+def handle_github_422(func: F) -> F:
+    """Decorator to handle GitHub 422 Unprocessable Entity errors, logging and raising with details."""
+
+    @wraps(func)
+    async def wrapper(*args: Any, **kwargs: Any) -> Any:
+        try:
+            return await func(*args, **kwargs)
+        except RequestFailed as exc:
+            if exc.response.status_code == 422:
+                try:
+                    error_data = exc.response.json()
+                except Exception:
+                    error_data = {}
+                message = error_data.get("message", "Unprocessable Entity")
+                errors = error_data.get("errors", [])
+                logger.error(
+                    "GitHub 422 Unprocessable Entity",
+                    function=func.__name__,
+                    message=message,
+                    errors=errors,
+                    url=getattr(exc.response, "url", None),
+                    status_code=422,
+                )
+                raise ValueError(
+                    f"GitHub 422 error in {func.__name__}: {message} | errors: {errors} | url: {getattr(exc.response, 'url', None)}"
+                ) from exc
+            raise
+
+    return wrapper  # type: ignore
 
 
 class GitHubKitAdapter(GitHubClientBase):
@@ -67,6 +101,7 @@ class GitHubKitAdapter(GitHubClientBase):
         return response.parsed_data
 
     # Issue CRUD
+    @handle_github_422
     async def create_issue(
         self,
         title: str,
@@ -92,6 +127,7 @@ class GitHubKitAdapter(GitHubClientBase):
         )
         return response.parsed_data
 
+    @handle_github_422
     async def update_issue(
         self,
         issue_number: int,
@@ -126,6 +162,7 @@ class GitHubKitAdapter(GitHubClientBase):
         response: Response[list[Issue]] = await self.client.rest.issues.async_list_for_repo(owner=self.owner, repo=self.repo_name, **kwargs)
         return response.parsed_data
 
+    @handle_github_422
     async def close_issue(self, issue_number: int, **kwargs: Any) -> Issue:
         """Close an issue for a repository."""
         response: Response[Issue] = await self.client.rest.issues.async_update(
@@ -138,6 +175,7 @@ class GitHubKitAdapter(GitHubClientBase):
         return response.parsed_data
 
     # Label CRUD
+    @handle_github_422
     async def create_label(self, name: str, color: str, description: str | None = None, **kwargs: Any) -> Label:
         """Create a label for a repository."""
         params = self._omit_null_parameters(
@@ -153,6 +191,7 @@ class GitHubKitAdapter(GitHubClientBase):
         )
         return response.parsed_data
 
+    @handle_github_422
     async def update_label(
         self,
         name: str,
@@ -187,6 +226,7 @@ class GitHubKitAdapter(GitHubClientBase):
         return response.parsed_data
 
     # Pull Request CRUD
+    @handle_github_422
     async def create_pull_request(
         self,
         title: str,
@@ -214,6 +254,7 @@ class GitHubKitAdapter(GitHubClientBase):
         )
         return response.parsed_data
 
+    @handle_github_422
     async def update_pull_request(
         self,
         pull_number: int,
@@ -246,11 +287,13 @@ class GitHubKitAdapter(GitHubClientBase):
         response: Response[list[PullRequestSimple]] = await self.client.rest.pulls.async_list(owner=self.owner, repo=self.repo_name, **kwargs)
         return response.parsed_data
 
+    @handle_github_422
     async def merge_pull_request(self, pull_number: int, **kwargs: Any) -> Any:
         """Merge a pull request for a repository."""
         response = await self.client.rest.pulls.async_merge(owner=self.owner, repo=self.repo_name, pull_number=pull_number, **kwargs)
         return response.parsed_data
 
+    @handle_github_422
     async def close_pull_request(self, pull_number: int, **kwargs: Any) -> PullRequest:
         """Close a pull request for a repository."""
         response: Response[PullRequest] = await self.client.rest.pulls.async_update(
@@ -272,6 +315,7 @@ class GitHubKitAdapter(GitHubClientBase):
                 return False
             raise
 
+    @handle_github_422
     async def create_branch(self, branch_name: str, base_branch: str) -> None:
         """Create a new branch from the base branch."""
         try:
@@ -286,7 +330,7 @@ class GitHubKitAdapter(GitHubClientBase):
                     f"You must have at least one commit on the default branch ('{base_branch}') to create a pull request against it."
                 )
             raise
-        sha = base_ref.parsed_data.ref
+        sha = base_ref.parsed_data.object_.sha
         # Create the new branch
         await self.client.rest.git.async_create_ref(
             owner=self.owner,
@@ -296,6 +340,7 @@ class GitHubKitAdapter(GitHubClientBase):
         )
         logger.info("Created branch", branch=branch_name, base_branch=base_branch)
 
+    @handle_github_422
     async def commit_files_to_branch(
         self,
         branch_name: str,
