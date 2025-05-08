@@ -10,8 +10,8 @@ from tests.integration.utils import (
     _close_issues_by_title,
     _wait_for_issues_on_github,
     generate_unique_issue_title,
-    get_cli_with_starting_args,
     get_github_adapter,
+    run_process_issues_cli,
 )
 
 
@@ -43,15 +43,7 @@ async def test_real_github_issue_sync_cli_single_issue_with_template() -> None:
         pyyaml.safe_dump(yaml_dict, tmp_yaml)
         tmp_yaml_path = tmp_yaml.name
     try:
-        cli_with_starting_args = get_cli_with_starting_args()
-        cli_command = cli_with_starting_args + ["process-issues", tmp_yaml_path]
-        result = subprocess.run(
-            cli_command,
-            capture_output=True,
-            text=True,
-            check=True,
-            env=os.environ.copy(),
-        )
+        result = run_process_issues_cli(tmp_yaml_path)
         assert result.returncode == 0
         assert "Issue not found in GitHub" in result.stdout
         # Wait for the issue to appear
@@ -63,9 +55,7 @@ async def test_real_github_issue_sync_cli_single_issue_with_template() -> None:
         assert created_issue.body.strip() == expected_body.strip()
         # Clean up: close the created issue
         await _close_issues_by_title(adapter, [unique_title])
-    except subprocess.CalledProcessError as e:
-        print("STDOUT:", e.stdout)
-        print("STDERR:", e.stderr)
+    except subprocess.CalledProcessError:
         raise
     finally:
         os.remove(tmp_yaml_path)

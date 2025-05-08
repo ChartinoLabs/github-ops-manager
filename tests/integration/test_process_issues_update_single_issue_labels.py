@@ -13,8 +13,8 @@ from tests.integration.utils import (
     _wait_for_issues_on_github,
     _write_yaml_issues_file,
     generate_unique_issue_title,
-    get_cli_with_starting_args,
     get_github_adapter,
+    run_process_issues_cli,
 )
 
 
@@ -45,16 +45,8 @@ async def test_real_github_issue_update_labels_single() -> None:
     assert not any(issue.title == unique_title for issue in existing)
     tmp_yaml_path = _write_yaml_issues_file(yaml_issues)
     try:
-        cli_with_starting_args = get_cli_with_starting_args()
-        cli_command = cli_with_starting_args + ["process-issues", tmp_yaml_path]
         # 1. Create the issue via CLI
-        result = subprocess.run(
-            cli_command,
-            capture_output=True,
-            text=True,
-            check=True,
-            env=os.environ.copy(),
-        )
+        result = run_process_issues_cli(tmp_yaml_path)
         assert result.returncode == 0
         assert "Issue not found in GitHub" in result.stdout
         # Wait for the issue to appear
@@ -67,13 +59,7 @@ async def test_real_github_issue_update_labels_single() -> None:
         with open(tmp_yaml_path, "w") as f:
             yaml.dump({"issues": yaml_issues}, f)
         # 3. Run the CLI again to update the labels
-        result_update = subprocess.run(
-            cli_command,
-            capture_output=True,
-            text=True,
-            check=True,
-            env=os.environ.copy(),
-        )
+        result_update = run_process_issues_cli(tmp_yaml_path)
         assert result_update.returncode == 0
 
         # 4. Wait for the update to be reflected on GitHub
@@ -86,9 +72,7 @@ async def test_real_github_issue_update_labels_single() -> None:
         assert _extract_label_names(updated_issue) == set(initial_labels + [new_label])
         # Clean up: close the created issue
         await _close_issues_by_title(adapter, [unique_title])
-    except subprocess.CalledProcessError as e:
-        print("STDOUT:", e.stdout)
-        print("STDERR:", e.stderr)
+    except subprocess.CalledProcessError:
         raise
     finally:
         os.remove(tmp_yaml_path)

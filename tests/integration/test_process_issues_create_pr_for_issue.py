@@ -10,8 +10,8 @@ from githubkit.versions.latest.models import PullRequest
 
 from tests.integration.utils import (
     _write_yaml_issues_file,
-    get_cli_with_starting_args,
     get_github_adapter,
+    run_process_issues_cli,
 )
 
 
@@ -51,9 +51,6 @@ async def test_process_issues_create_pr_for_issue() -> None:
     prs = await adapter.list_pull_requests(state="open")
     assert not any(pr.title == pr_title for pr in prs)
 
-    cli_with_starting_args = get_cli_with_starting_args()
-    cli_command = cli_with_starting_args + ["process-issues", tmp_yaml_path]
-
     try:
         # 4. Run the CLI
         # Copy the temp file to the current directory with the correct name for the CLI to find it
@@ -61,15 +58,7 @@ async def test_process_issues_create_pr_for_issue() -> None:
 
         local_test_filename = os.path.basename(test_filename)
         shutil.copy(test_filename, local_test_filename)
-        result = subprocess.run(
-            cli_command,
-            capture_output=True,
-            text=True,
-            check=True,
-            env=os.environ.copy(),
-        )
-        print("\nCLI STDOUT:\n", result.stdout)
-        print("\nCLI STDERR:\n", result.stderr)
+        result = run_process_issues_cli(tmp_yaml_path)
         assert result.returncode == 0
         # 5. Wait for the PR to appear
         pr: PullRequest | None = None
@@ -114,9 +103,7 @@ async def test_process_issues_create_pr_for_issue() -> None:
         issue = next((i for i in issues if i.title == issue_title), None)
         if issue:
             await adapter.close_issue(issue.number)
-    except subprocess.CalledProcessError as e:
-        print("\nCLI STDOUT (on error):\n", e.stdout)
-        print("\nCLI STDERR (on error):\n", e.stderr)
+    except subprocess.CalledProcessError:
         raise
     finally:
         # Remove local files

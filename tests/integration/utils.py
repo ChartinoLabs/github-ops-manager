@@ -1,6 +1,7 @@
 """Utility functions for integration tests."""
 
 import os
+import subprocess
 import tempfile
 import time
 import uuid
@@ -124,3 +125,23 @@ def get_github_adapter() -> GitHubKitAdapter:
     owner, repo = repo_slug.split("/")
     client = GitHub(token)
     return GitHubKitAdapter(client, owner, repo)
+
+
+def run_process_issues_cli(yaml_path: str) -> subprocess.CompletedProcess[str]:
+    """Run the process-issues CLI command with the given YAML file.
+
+    Returns the CompletedProcess object.
+    Raises subprocess.CalledProcessError if the command fails.
+    """
+    cli_with_starting_args = get_cli_with_starting_args()
+    cli_command = cli_with_starting_args + ["process-issues", yaml_path]
+    result = subprocess.run(
+        cli_command,
+        capture_output=True,
+        text=True,
+        check=True,
+        env=os.environ.copy(),
+    )
+    print("\nCLI STDOUT:\n", result.stdout)
+    print("\nCLI STDERR:\n", result.stderr)
+    return result
