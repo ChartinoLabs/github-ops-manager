@@ -263,8 +263,13 @@ class GitHubKitAdapter(GitHubClientBase):
 
     async def branch_exists(self, branch_name: str) -> bool:
         """Check if a branch exists in the repository."""
-        await self.client.rest.repos.async_get_branch(owner=self.owner, repo=self.repo_name, branch=branch_name)
-        return True
+        try:
+            await self.client.rest.repos.async_get_branch(owner=self.owner, repo=self.repo_name, branch=branch_name)
+            return True
+        except Exception as e:
+            if "not found" in str(e).lower():
+                return False
+            raise
 
     async def create_branch(self, branch_name: str, base_branch: str) -> None:
         """Create a new branch from the base branch."""
@@ -297,8 +302,11 @@ class GitHubKitAdapter(GitHubClientBase):
                     ref=branch_name,
                 )
                 file_sha = file_resp.parsed_data.sha
-            except Exception:
-                file_sha = None
+            except Exception as e:
+                if "not found" in str(e).lower():
+                    file_sha = None
+                else:
+                    raise
             import base64
 
             encoded_content = base64.b64encode(file_content.encode("utf-8")).decode("utf-8")
