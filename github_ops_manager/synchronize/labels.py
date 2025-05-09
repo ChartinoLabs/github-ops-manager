@@ -1,10 +1,12 @@
 """Contains synchronization logic for GitHub labels."""
 
+import structlog
 from githubkit.versions.latest.models import Label
 
 from github_ops_manager.schemas.default_issue import LabelModel
 from github_ops_manager.synchronize.models import SyncDecision
-from github_ops_manager.synchronize.workflow_runner import logger
+
+logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)
 
 
 async def decide_github_label_sync_action(desired_label: LabelModel, github_label: Label | None = None) -> SyncDecision:

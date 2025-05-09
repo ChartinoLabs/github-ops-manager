@@ -3,13 +3,16 @@
 import time
 from pathlib import Path
 
+import structlog
+
 from github_ops_manager.configuration.models import GitHubAuthenticationType
 from github_ops_manager.github.adapter import GitHubKitAdapter
 from github_ops_manager.processing.yaml_processor import YAMLProcessingError, YAMLProcessor
 from github_ops_manager.synchronize.issues import render_issue_bodies, sync_github_issues
 from github_ops_manager.synchronize.pull_requests import sync_github_pull_requests
 from github_ops_manager.synchronize.results import AllIssueSynchronizationResults, ProcessIssuesResult
-from github_ops_manager.synchronize.workflow_runner import logger
+
+logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)
 
 
 async def run_process_issues_workflow(
