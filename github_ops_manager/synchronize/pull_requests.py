@@ -165,11 +165,17 @@ async def sync_github_pull_request(
     # Ignoring type below because we know that the pull_request field is
     # not None at this point.
     pr: PullRequestModel = desired_issue.pull_request  # type: ignore
-    pr_body = pr.body or f"Closes #{existing_issue.number}"
+    if pr.body is None:
+        pr.body = f"Closes #{existing_issue.number}"
     pr_labels = pr.labels or []
 
     # Determine branch name
     desired_branch_name = pr.branch or generate_branch_name(existing_issue.number, desired_issue.title)
+
+    # Ensure that pull request body has closing keywords. If it doesn't,
+    # then we need to add them to the bottom of the body.
+    if not await pull_request_has_closing_keywords(existing_issue.number, pr.body):
+        pr.body = f"{pr.body}\n\nCloses #{existing_issue.number}"
 
     # Make overall PR sync decision
     pr_sync_decision = await decide_github_pull_request_sync_action(desired_issue, existing_pull_request=existing_pull_request)
@@ -184,17 +190,12 @@ async def sync_github_pull_request(
         # Commit files to branch
         await commit_files_to_branch(desired_issue, existing_issue, desired_branch_name, github_adapter)
 
-        # Ensure that pull request body has closing keywords. If it doesn't,
-        # then we need to add them to the bottom of the body.
-        if not await pull_request_has_closing_keywords(existing_issue.number, pr_body):
-            pr_body = f"{pr_body}\n\nCloses #{existing_issue.number}"
-
         logger.info("Creating new PR for issue", branch=desired_branch_name, base_branch=default_branch)
         new_pr = await github_adapter.create_pull_request(
             title=pr.title,
             head=desired_branch_name,
             base=default_branch,
-            body=pr_body,
+            body=pr.body,
         )
         logger.info("Created new PR", pr_number=new_pr.number, branch=desired_branch_name)
         await github_adapter.set_labels_on_issue(new_pr.number, pr_labels)
@@ -206,7 +207,7 @@ async def sync_github_pull_request(
         await github_adapter.update_pull_request(
             pull_number=existing_pull_request.number,
             title=pr.title,
-            body=pr_body,
+            body=pr.body,
         )
         await github_adapter.set_labels_on_issue(existing_pull_request.number, pr_labels)
         desired_file_data = await get_desired_pull_request_file_content(desired_issue)
