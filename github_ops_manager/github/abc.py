@@ -43,7 +43,7 @@ class GitHubClientBase(ABC):
         pass
 
     @abstractmethod
-    async def list_issues(self, **kwargs: Any) -> list[Any]:
+    async def list_issues(self, state: Literal["open", "closed", "all"] | None = "all", **kwargs: Any) -> list[Any]:
         """List issues for a repository."""
         pass
 
@@ -82,6 +82,11 @@ class GitHubClientBase(ABC):
 
     # Pull Request CRUD
     @abstractmethod
+    async def get_pull_request(self, pull_request_number: int) -> Any:
+        """Get a pull request for a repository."""
+        pass
+
+    @abstractmethod
     async def create_pull_request(
         self,
         title: str,
@@ -110,7 +115,7 @@ class GitHubClientBase(ABC):
         pass
 
     @abstractmethod
-    async def list_pull_requests(self, **kwargs: Any) -> list[Any]:
+    async def list_pull_requests(self, state: Literal["open", "closed", "all"] | None = "all", **kwargs: Any) -> list[Any]:
         """List pull requests for a repository."""
         pass
 

@@ -158,10 +158,27 @@ class GitHubKitAdapter(GitHubClientBase):
         )
         return response.parsed_data
 
-    async def list_issues(self, **kwargs: Any) -> list[Issue]:
-        """List issues for a repository."""
-        response: Response[list[Issue]] = await self.client.rest.issues.async_list_for_repo(owner=self.owner, repo=self.repo_name, **kwargs)
-        return response.parsed_data
+    async def list_issues(self, state: Literal["open", "closed", "all"] = "all", per_page: int = 100, **kwargs: Any) -> list[Issue]:
+        """List all issues for a repository, handling pagination."""
+        all_issues: list[Issue] = []
+        page: int = 1
+        while True:
+            response: Response[list[Issue]] = await self.client.rest.issues.async_list_for_repo(
+                owner=self.owner,
+                repo=self.repo_name,
+                state=state,
+                per_page=per_page,
+                page=page,
+                **kwargs,
+            )
+            issues: list[Issue] = response.parsed_data
+            if not issues:
+                break
+            all_issues.extend(issues)
+            if len(issues) < per_page:
+                break
+            page += 1
+        return all_issues
 
     @handle_github_422
     async def close_issue(self, issue_number: int, **kwargs: Any) -> Issue:
@@ -238,6 +255,13 @@ class GitHubKitAdapter(GitHubClientBase):
         return response.parsed_data
 
     # Pull Request CRUD
+    async def get_pull_request(self, pull_request_number: int) -> PullRequest:
+        """Get a pull request from the repository."""
+        response: Response[PullRequest] = await self.client.rest.pulls.async_get(
+            owner=self.owner, repo=self.repo_name, pull_number=pull_request_number
+        )
+        return response.parsed_data
+
     @handle_github_422
     async def create_pull_request(
         self,
@@ -294,10 +318,29 @@ class GitHubKitAdapter(GitHubClientBase):
         )
         return response.parsed_data
 
-    async def list_pull_requests(self, **kwargs: Any) -> list[PullRequestSimple]:
-        """List pull requests for a repository."""
-        response: Response[list[PullRequestSimple]] = await self.client.rest.pulls.async_list(owner=self.owner, repo=self.repo_name, **kwargs)
-        return response.parsed_data
+    async def list_pull_requests(
+        self, state: Literal["open", "closed", "all"] = "all", per_page: int = 100, **kwargs: Any
+    ) -> list[PullRequestSimple]:
+        """List all pull requests for a repository, handling pagination."""
+        all_pull_requests: list[PullRequestSimple] = []
+        page: int = 1
+        while True:
+            response: Response[list[PullRequestSimple]] = await self.client.rest.pulls.async_list(
+                owner=self.owner,
+                repo=self.repo_name,
+                state=state,
+                per_page=per_page,
+                page=page,
+                **kwargs,
+            )
+            pull_requests: list[PullRequestSimple] = response.parsed_data
+            if not pull_requests:
+                break
+            all_pull_requests.extend(pull_requests)
+            if len(pull_requests) < per_page:
+                break
+            page += 1
+        return all_pull_requests
 
     @handle_github_422
     async def merge_pull_request(self, pull_number: int, **kwargs: Any) -> Any:

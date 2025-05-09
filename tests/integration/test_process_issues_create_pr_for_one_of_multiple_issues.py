@@ -1,6 +1,7 @@
-"""Integration test for the process-issues command to create a PR for an issue."""
+"""Integration test for process-issues: multiple issues, only one with a PR."""
 
 import os
+import shutil
 import subprocess
 import tempfile
 import uuid
@@ -8,8 +9,9 @@ import uuid
 import pytest
 from githubkit.versions.latest.models import PullRequest
 
-from github_ops_manager.github.adapter import GitHubKitAdapter
 from tests.integration.utils import (
+    _close_issues_by_title,
+    _wait_for_issues_on_github,
     _write_yaml_issues_file,
     get_cli_with_starting_args,
     get_github_adapter,
@@ -18,25 +20,29 @@ from tests.integration.utils import (
 
 @pytest.mark.integration
 @pytest.mark.asyncio
-async def test_process_issues_create_pr_for_issue() -> None:
-    """Test creating a PR for an issue with a new file via the CLI."""
-    adapter: GitHubKitAdapter = get_github_adapter()
-    unique_id: str = str(uuid.uuid4())
-    issue_title: str = f"IntegrationTestPR-Issue-{unique_id}"
-    pr_title: str = f"IntegrationTestPR-PR-{unique_id}"
-    pr_body: str = "This PR is created by the integration test."
-    pr_labels: list[str] = ["integration-test", "pr-label"]
-    test_file_content: str = f"Random content: {uuid.uuid4()}"
+async def test_process_issues_create_pr_for_one_of_multiple_issues() -> None:
+    """Test multiple issues, only one with a PR, via the CLI."""
+    adapter = get_github_adapter()
+    unique_id = str(uuid.uuid4())
+    issue_titles = [
+        f"IntegrationTestPR-MultiIssue-{unique_id}-1",
+        f"IntegrationTestPR-MultiIssue-{unique_id}-2",
+        f"IntegrationTestPR-MultiIssue-{unique_id}-3",
+    ]
+    pr_title = f"IntegrationTestPR-PR-{unique_id}"
+    pr_body = "This PR is created by the integration test (one of multiple)."
+    pr_labels = ["integration-test", "pr-label"]
+    test_file_content = f"Random content: {uuid.uuid4()}"
 
-    # 1. Write the random file to a temporary file
+    # Write the random file to a temporary file
     with tempfile.NamedTemporaryFile("w", suffix=f"_{unique_id}.txt", delete=False) as tmp_file:
         test_filename = tmp_file.name
         tmp_file.write(test_file_content)
 
-    # 2. Write the YAML file
+    # Compose YAML: only the first issue has a PR
     yaml_issues = [
         {
-            "title": issue_title,
+            "title": issue_titles[0],
             "body": "This is a test issue for PR creation.",
             "pull_request": {
                 "title": pr_title,
@@ -44,11 +50,19 @@ async def test_process_issues_create_pr_for_issue() -> None:
                 "files": [os.path.basename(test_filename)],
                 "labels": pr_labels,
             },
-        }
+        },
+        {
+            "title": issue_titles[1],
+            "body": "This is a test issue without PR 2.",
+        },
+        {
+            "title": issue_titles[2],
+            "body": "This is a test issue without PR 3.",
+        },
     ]
-    tmp_yaml_path: str = _write_yaml_issues_file(yaml_issues)
+    tmp_yaml_path = _write_yaml_issues_file(yaml_issues)
 
-    # 3. Pre-check: Assert PR does not exist
+    # Pre-check: Assert PR does not exist
     prs = await adapter.list_pull_requests(state="open")
     assert not any(pr.title == pr_title for pr in prs)
 
@@ -56,10 +70,7 @@ async def test_process_issues_create_pr_for_issue() -> None:
     cli_command = cli_with_starting_args + ["process-issues", tmp_yaml_path]
 
     try:
-        # 4. Run the CLI
-        # Copy the temp file to the current directory with the correct name for the CLI to find it
-        import shutil
-
+        # Copy the temp file to the current directory for the CLI
         local_test_filename = os.path.basename(test_filename)
         shutil.copy(test_filename, local_test_filename)
         result = subprocess.run(
@@ -72,7 +83,7 @@ async def test_process_issues_create_pr_for_issue() -> None:
         print("\nCLI STDOUT:\n", result.stdout)
         print("\nCLI STDERR:\n", result.stderr)
         assert result.returncode == 0
-        # 5. Wait for the PR to appear
+        # Wait for the PR to appear
         pr: PullRequest | None = None
         for _ in range(25):
             prs = await adapter.list_pull_requests(state="open")
@@ -87,7 +98,7 @@ async def test_process_issues_create_pr_for_issue() -> None:
         pr_label_names = {label.name if hasattr(label, "name") else label for label in getattr(pr, "labels", [])}
         for label in pr_labels:
             assert label in pr_label_names
-        # 6. Check the file exists in the PR branch
+        # Check the file exists in the PR branch
         branch_name = pr.head.ref
         file_resp = await adapter.client.rest.repos.async_get_content(
             owner=adapter.owner,
@@ -99,6 +110,10 @@ async def test_process_issues_create_pr_for_issue() -> None:
 
         file_content = base64.b64decode(file_resp.parsed_data.content).decode("utf-8")
         assert file_content == test_file_content
+        # Check all issues exist
+        issues = await _wait_for_issues_on_github(adapter, issue_titles)
+        for title in issue_titles:
+            assert any(issue.title == title for issue in issues)
         # Cleanup: close PR, delete branch, remove file from repo if possible
         await adapter.close_pull_request(pr.number)
         try:
@@ -109,18 +124,13 @@ async def test_process_issues_create_pr_for_issue() -> None:
             )
         except Exception:
             pass
-
-        # Fetch open issues and close the issue we've created
-        issues = await adapter.list_issues(state="open")
-        issue = next((i for i in issues if i.title == issue_title), None)
-        if issue:
-            await adapter.close_issue(issue.number)
+        # Close all created issues
+        await _close_issues_by_title(adapter, issue_titles)
     except subprocess.CalledProcessError as e:
         print("\nCLI STDOUT (on error):\n", e.stdout)
         print("\nCLI STDERR (on error):\n", e.stderr)
         raise
     finally:
-        # Remove local files
         if os.path.exists(test_filename):
             os.remove(test_filename)
         local_test_filename = os.path.basename(test_filename)
