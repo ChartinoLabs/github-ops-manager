@@ -6,6 +6,7 @@ from githubkit.versions.latest.models import Issue, PullRequest
 from github_ops_manager.github.adapter import GitHubKitAdapter
 from github_ops_manager.schemas.default_issue import IssueModel
 from github_ops_manager.synchronize.models import SyncDecision
+from github_ops_manager.synchronize.utils import compare_github_field
 from github_ops_manager.utils.helpers import generate_branch_name
 
 logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)
@@ -51,21 +52,38 @@ async def decide_github_pull_request_sync_action(desired_issue: IssueModel, exis
         logger.info("Existing issue has no pull request linked to it, creating a new one", issue_title=desired_issue.title)
         return SyncDecision.CREATE
 
-    # Next, compare the titles of the existing and desired pull request
-    if existing_issue.pull_request.title != desired_issue.title:
-        logger.info("Existing pull request title does not match desired title, updating the pull request", issue_title=desired_issue.title)
-        return SyncDecision.UPDATE
-
-    # Next, check the body of the existing and desired pull request
-    if existing_issue.pull_request.body != desired_issue.pull_request.body:
-        logger.info("Existing pull request body does not match desired body, updating the pull request", issue_title=desired_issue.title)
-        return SyncDecision.UPDATE
+    # Compare relevant pull request fields
+    pr_fields_to_compare = ["title", "body"]
+    for field in pr_fields_to_compare:
+        desired_value = getattr(desired_issue.pull_request, field, None)
+        github_value = getattr(existing_issue.pull_request, field, None)
+        field_decision = await compare_github_field(desired_value, github_value)
+        if field_decision == SyncDecision.UPDATE:
+            logger.info(
+                "Pull request needs to be updated",
+                issue_title=desired_issue.title,
+                pr_field=field,
+                current_value=github_value,
+                new_value=desired_value,
+            )
+            return SyncDecision.UPDATE
+        elif field_decision == SyncDecision.CREATE:
+            logger.info(
+                "Pull request needs to be created",
+                issue_title=desired_issue.title,
+                pr_field=field,
+                new_value=desired_value,
+            )
+            return SyncDecision.CREATE
 
     # Next, check the labels of the existing and desired pull request
     label_decision = await decide_github_pull_request_label_sync_action(desired_issue.pull_request.labels, existing_issue.pull_request)
     if label_decision == SyncDecision.UPDATE:
         logger.info("Existing pull request labels do not match desired labels, updating the pull request", issue_title=desired_issue.title)
         return SyncDecision.UPDATE
+
+    logger.info("Pull request is up to date", issue_title=desired_issue.title)
+    return SyncDecision.NOOP
 
 
 async def sync_github_pull_requests(
