@@ -2,12 +2,19 @@
 
 from types import SimpleNamespace
 from typing import Any
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
+import jinja2
 import pytest
 
 from github_ops_manager.github.adapter import GitHubKitAdapter
-from github_ops_manager.synchronize.issues import compare_github_issue_field, decide_github_issue_label_sync_action, decide_github_issue_sync_action
+from github_ops_manager.schemas.default_issue import IssueModel, IssuesYAMLModel
+from github_ops_manager.synchronize.issues import (
+    compare_github_issue_field,
+    decide_github_issue_label_sync_action,
+    decide_github_issue_sync_action,
+    render_issue_bodies,
+)
 from github_ops_manager.synchronize.models import SyncDecision
 
 
@@ -192,3 +199,43 @@ async def test_decide_github_issue_label_sync_action(desired_label: str, github_
     github_issue = SimpleNamespace(labels=github_labels)
     result = await decide_github_issue_label_sync_action(desired_label, github_issue)
     assert result == expected
+
+
+@pytest.mark.asyncio
+async def test_render_issue_bodies_success() -> None:
+    """Test successful rendering of issue bodies using a mock template."""
+    issues = [
+        IssueModel(title="Test", body="old", data={"foo": "bar"}),
+        IssueModel(title="NoData", body="should stay", data=None),
+    ]
+    model = IssuesYAMLModel(issue_template="fake_template.j2", issues=issues)
+    mock_template = MagicMock()
+    mock_template.render.side_effect = lambda **ctx: f"rendered: {ctx['title']}"
+    with patch("github_ops_manager.synchronize.issues.construct_jinja2_template", new=AsyncMock(return_value=mock_template)):
+        result = await render_issue_bodies(model)
+    assert result.issues[0].body == "rendered: Test"
+    assert result.issues[1].body == "should stay"
+
+
+@pytest.mark.asyncio
+async def test_render_issue_bodies_template_syntax_error() -> None:
+    """Test that a jinja2.TemplateSyntaxError is properly raised and logged."""
+    issues = [IssueModel(title="Test", body="old", data={"foo": "bar"})]
+    model = IssuesYAMLModel(issue_template="bad_template.j2", issues=issues)
+    with patch(
+        "github_ops_manager.synchronize.issues.construct_jinja2_template", new=AsyncMock(side_effect=jinja2.TemplateSyntaxError("bad syntax", 1))
+    ):
+        with pytest.raises(jinja2.TemplateSyntaxError):
+            await render_issue_bodies(model)
+
+
+@pytest.mark.asyncio
+async def test_render_issue_bodies_undefined_error() -> None:
+    """Test that a jinja2.UndefinedError is properly raised and logged during rendering."""
+    issues = [IssueModel(title="Test", body="old", data={"foo": "bar"})]
+    model = IssuesYAMLModel(issue_template="fake_template.j2", issues=issues)
+    mock_template = MagicMock()
+    mock_template.render.side_effect = jinja2.UndefinedError("undefined var")
+    with patch("github_ops_manager.synchronize.issues.construct_jinja2_template", new=AsyncMock(return_value=mock_template)):
+        with pytest.raises(jinja2.UndefinedError):
+            await render_issue_bodies(model)

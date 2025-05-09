@@ -188,3 +188,5 @@ async def render_issue_bodies(issues_yaml_model: IssuesYAMLModel) -> IssuesYAMLM
             except jinja2.UndefinedError as exc:
                 logger.error("Failed to render issue body with template", issue_title=issue.title, error=str(exc))
                 raise
+
+    return issues_yaml_model
