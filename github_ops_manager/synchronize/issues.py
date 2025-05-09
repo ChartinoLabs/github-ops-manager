@@ -1,18 +1,19 @@
 """Contains synchronization logic for GitHub issues."""
 
 import time
-from typing import Any
 
 import jinja2
+import structlog
 from githubkit.versions.latest.models import Issue, IssuePropLabelsItemsOneof1, Label
 
 from github_ops_manager.github.adapter import GitHubKitAdapter
 from github_ops_manager.schemas.default_issue import IssueModel, IssuesYAMLModel
 from github_ops_manager.synchronize.models import SyncDecision
 from github_ops_manager.synchronize.results import AllIssueSynchronizationResults, IssueSynchronizationResult
-from github_ops_manager.synchronize.utils import value_is_noney
-from github_ops_manager.synchronize.workflow_runner import logger
+from github_ops_manager.synchronize.utils import compare_github_field
 from github_ops_manager.utils.templates import construct_jinja2_template
+
+logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)
 
 
 async def decide_github_issue_label_sync_action(desired_label: str, github_issue: Issue) -> SyncDecision:
@@ -28,25 +29,6 @@ async def decide_github_issue_label_sync_action(desired_label: str, github_issue
             if github_label.name == desired_label:
                 return SyncDecision.NOOP
     return SyncDecision.UPDATE
-
-
-async def compare_github_issue_field(desired_value: Any, github_value: Any) -> SyncDecision:
-    """Compare a YAML field and a GitHub field, and decide whether to create, update, or no-op.
-
-    Key is field name.
-    """
-    desired_value_is_noney = await value_is_noney(desired_value)
-    github_value_is_noney = await value_is_noney(github_value)
-    if desired_value_is_noney and github_value_is_noney:
-        return SyncDecision.NOOP
-    elif desired_value_is_noney:
-        return SyncDecision.CREATE
-    elif github_value_is_noney:
-        return SyncDecision.UPDATE
-    elif desired_value == github_value:
-        return SyncDecision.NOOP
-    else:
-        return SyncDecision.UPDATE
 
 
 async def decide_github_issue_sync_action(desired_issue: IssueModel, github_issue: Issue | None = None) -> SyncDecision:
@@ -94,7 +76,7 @@ async def decide_github_issue_sync_action(desired_issue: IssueModel, github_issu
                 )
                 return SyncDecision.UPDATE
         else:
-            field_decision = await compare_github_issue_field(getattr(desired_issue, field, None), getattr(github_issue, field, None))
+            field_decision = await compare_github_field(getattr(desired_issue, field, None), getattr(github_issue, field, None))
             if field_decision == SyncDecision.UPDATE:
                 logger.info(
                     "Issue needs to be updated",
