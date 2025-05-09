@@ -2,6 +2,7 @@
 
 import asyncio
 import sys
+import traceback
 from pathlib import Path
 
 import typer
@@ -126,9 +127,6 @@ def fetch_files_cli(
     branch: str | None = typer.Option(None, "--branch", help="Branch, tag, or commit SHA to fetch from. Defaults to the default branch."),
 ) -> None:
     """Fetch one or more files from the repository and download them locally at the same relative path."""
-    import os
-    import traceback
-
     repo: str = ctx.obj["repo"]
     github_api_url: str = ctx.obj["github_api_url"]
     github_pat_token: str | None = ctx.obj["github_pat_token"]
@@ -166,11 +164,11 @@ def fetch_files_cli(
                 traceback.print_exc()
                 raise typer.Exit(1) from exc
             # Write to local file, creating directories as needed
-            local_path = os.path.normpath(file_path)
-            os.makedirs(os.path.dirname(local_path) or ".", exist_ok=True)
-            with open(local_path, "w", encoding="utf-8") as f:
-                f.write(content)
-            downloaded.append(local_path)
+            local_path = Path(file_path)
+            if local_path.parent != Path(""):
+                local_path.parent.mkdir(parents=True, exist_ok=True)
+            local_path.write_text(content, encoding="utf-8")
+            downloaded.append(str(local_path))
         typer.echo(f"Successfully downloaded {len(downloaded)} file(s) from branch '{use_branch}':")
         for path in downloaded:
             typer.echo(f"  - {path}")
