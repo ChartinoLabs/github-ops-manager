@@ -6,7 +6,7 @@ from githubkit.versions.latest.models import Issue, PullRequest
 from github_ops_manager.github.adapter import GitHubKitAdapter
 from github_ops_manager.schemas.default_issue import IssueModel
 from github_ops_manager.synchronize.models import SyncDecision
-from github_ops_manager.synchronize.utils import compare_github_field
+from github_ops_manager.synchronize.utils import compare_github_field, compare_label_sets
 from github_ops_manager.utils.helpers import generate_branch_name
 
 logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)
@@ -31,18 +31,6 @@ async def decide_github_pull_request_file_sync_action(
             else:
                 return SyncDecision.UPDATE
     return SyncDecision.CREATE
-
-
-async def decide_github_pull_request_label_sync_action(desired_label: str, github_pull_request: PullRequest) -> SyncDecision:
-    """Compare a YAML label and a GitHub pull request, and decide whether to create, update, or no-op."""
-    for github_label in github_pull_request.labels:
-        if isinstance(github_label, str):
-            if github_label == desired_label:
-                return SyncDecision.NOOP
-        else:
-            if github_label.name == desired_label:
-                return SyncDecision.NOOP
-    return SyncDecision.UPDATE
 
 
 async def decide_github_pull_request_sync_action(desired_issue: IssueModel, existing_issue: Issue, github_adapter: GitHubKitAdapter) -> SyncDecision:
@@ -77,9 +65,12 @@ async def decide_github_pull_request_sync_action(desired_issue: IssueModel, exis
             return SyncDecision.CREATE
 
     # Next, check the labels of the existing and desired pull request
-    label_decision = await decide_github_pull_request_label_sync_action(desired_issue.pull_request.labels, existing_issue.pull_request)
-    if label_decision == SyncDecision.UPDATE:
-        logger.info("Existing pull request labels do not match desired labels, updating the pull request", issue_title=desired_issue.title)
+    decision = await compare_label_sets(desired_issue.pull_request.labels, getattr(existing_issue.pull_request, "labels", []))
+    if decision == SyncDecision.UPDATE:
+        logger.info(
+            "Existing pull request labels do not match desired labels, updating the pull request",
+            issue_title=desired_issue.title,
+        )
         return SyncDecision.UPDATE
 
     logger.info("Pull request is up to date", issue_title=desired_issue.title)
