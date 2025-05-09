@@ -1,5 +1,6 @@
 """GitHub client adapter for the githubkit library."""
 
+import base64
 from functools import wraps
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Literal, Self, TypeVar
@@ -378,3 +379,22 @@ class GitHubKitAdapter(GitHubClientBase):
                 params["sha"] = file_sha
             await self.client.rest.repos.async_create_or_update_file_contents(**params)
             logger.info("Committed file to branch", file=file_path, branch=branch_name)
+
+    async def list_files_in_pull_request(self, pull_number: int) -> list[Any]:
+        """List files changed in a pull request."""
+        response = await self.client.rest.pulls.async_list_files(
+            owner=self.owner,
+            repo=self.repo_name,
+            pull_number=pull_number,
+        )
+        return response.parsed_data
+
+    async def get_file_content_from_pull_request(self, file_path: str, branch: str) -> str:
+        """Get the content of a file from a specific branch (typically the PR's head branch)."""
+        response = await self.client.rest.repos.async_get_content(
+            owner=self.owner,
+            repo=self.repo_name,
+            path=file_path,
+            ref=branch,
+        )
+        return base64.b64decode(response.parsed_data.content).decode("utf-8")
