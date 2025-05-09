@@ -1,15 +1,19 @@
 """Defines the Command Line Interface (CLI) using Typer."""
 
 import asyncio
+import subprocess
 import sys
 import traceback
 from pathlib import Path
 
 import typer
 from dotenv import load_dotenv
+from ruamel.yaml import YAML
 
 from github_ops_manager.configuration.reconcile import validate_github_authentication_configuration
 from github_ops_manager.github.adapter import GitHubKitAdapter
+from github_ops_manager.processing.yaml_processor import YAMLProcessor
+from github_ops_manager.schemas.default_issue import IssueModel, IssuesYAMLModel, PullRequestModel
 from github_ops_manager.synchronize.driver import run_process_issues_workflow
 
 load_dotenv()
@@ -167,6 +171,72 @@ def fetch_files_cli(
             typer.echo(f"  - {path}")
 
     asyncio.run(fetch_files())
+
+
+@typer_app.command(name="sync-new-files")
+def sync_new_files_cli(
+    issues_file: Path = typer.Argument(..., help="Path to the issues YAML file."),
+    labels: str = typer.Option("", "--labels", help="Comma-separated labels to assign to each created issue and pull request."),
+) -> None:
+    """Detect new files in the current git repo and add issues/PRs for each to the issues file."""
+    # 1. Find new (untracked) files
+    try:
+        result = subprocess.run(["git", "ls-files", "--others", "--exclude-standard"], capture_output=True, text=True, check=True)
+        new_files: list[str] = [f for f in result.stdout.splitlines() if f.strip()]
+    except Exception as exc:
+        typer.echo(f"Error running git to find new files: {exc}", err=True)
+        raise typer.Exit(1) from exc
+
+    if not new_files:
+        typer.echo("No new (untracked) files found.")
+        return
+
+    # 2. Load and validate the issues file
+    processor = YAMLProcessor()
+    try:
+        issues_model: IssuesYAMLModel = processor.load_issues_model([str(issues_file)])
+    except Exception as exc:
+        typer.echo(f"Error loading or validating issues file: {exc}", err=True)
+        raise typer.Exit(1) from exc
+
+    # Parse labels string into a list
+    label_list: list[str] = [label.strip() for label in labels.split(",") if label.strip()] if labels else []
+
+    # 3. Add an issue for each new file
+    added_issues: list[IssueModel] = []
+    for file_path in new_files:
+        pr_title = f"Add file: {file_path}"
+        issue_title = f"Track new file: {file_path}"
+        pr_model = PullRequestModel(
+            title=pr_title,
+            files=[file_path],
+            labels=label_list if label_list else None,
+        )
+        issue_model = IssueModel(
+            title=issue_title,
+            body=f"This issue tracks the addition of `{file_path}`.",
+            labels=label_list if label_list else None,
+            pull_request=pr_model,
+        )
+        issues_model.issues.append(issue_model)
+        added_issues.append(issue_model)
+
+    # 4. Write the updated issues file
+    yaml = YAML()
+    yaml.default_flow_style = False
+    yaml.explicit_start = True
+    yaml.indent(mapping=2, sequence=4, offset=2)
+    try:
+        with open(issues_file, "w", encoding="utf-8") as f:
+            yaml.dump(issues_model.model_dump(mode="python", exclude_none=True, exclude_defaults=True), f)
+    except Exception as exc:
+        typer.echo(f"Error writing updated issues file: {exc}", err=True)
+        raise typer.Exit(1) from exc
+
+    typer.echo(f"Added {len(added_issues)} issues (with PRs) to {issues_file}.")
+    if added_issues:
+        typer.echo("First added issue:")
+        typer.echo(str(added_issues[0].model_dump()))
 
 
 if __name__ == "__main__":
