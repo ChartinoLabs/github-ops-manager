@@ -133,3 +133,8 @@ class GitHubClientBase(ABC):
     async def get_file_content_from_pull_request(self, file_path: str, branch: str) -> str:
         """Get the content of a file from a specific branch (typically the PR's head branch)."""
         pass
+
+    @abstractmethod
+    async def set_labels_on_issue(self, issue_number: int, labels: list[str]) -> Any:
+        """Set labels on a specific issue (or pull request)."""
+        pass
