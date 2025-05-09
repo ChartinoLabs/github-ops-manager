@@ -13,6 +13,14 @@ from github_ops_manager.utils.helpers import generate_branch_name
 logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)
 
 
+async def get_pull_request_from_issue(issue: Issue, github_adapter: GitHubKitAdapter) -> PullRequest | None:
+    """Get the pull request from the issue."""
+    if issue.pull_request is None or issue.pull_request is Unset._UNSET:
+        return None
+    pr_number = issue.pull_request.url.split("/")[-1]
+    return await github_adapter.get_pull_request(pr_number)
+
+
 async def decide_github_pull_request_file_sync_action(
     desired_file_name: str,
     desired_file_content: str,
@@ -37,8 +45,8 @@ async def decide_github_pull_request_file_sync_action(
 async def decide_github_pull_request_sync_action(desired_issue: IssueModel, existing_issue: Issue, github_adapter: GitHubKitAdapter) -> SyncDecision:
     """Compare a YAML issue and a GitHub issue, and decide whether to create, update, or no-op the associated pull request."""
     # First, check if the existing issue has a pull request linked to it.
-    existing_pr = existing_issue.pull_request
-    if existing_pr is None or existing_pr is Unset._UNSET:
+    existing_pr = await get_pull_request_from_issue(existing_issue, github_adapter)
+    if existing_pr is None:
         logger.info("Existing issue has no pull request linked to it, creating a new one", issue_title=desired_issue.title)
         return SyncDecision.CREATE
 
