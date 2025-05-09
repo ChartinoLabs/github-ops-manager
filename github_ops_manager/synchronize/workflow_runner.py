@@ -7,7 +7,6 @@ from pathlib import Path
 
 import jinja2
 import structlog
-from githubkit.versions.latest.models import Issue
 from structlog.stdlib import BoundLogger
 
 from github_ops_manager.configuration.models import GitHubAuthenticationType
@@ -17,9 +16,8 @@ from github_ops_manager.processing.yaml_processor import (
     YAMLProcessor,
 )
 from github_ops_manager.schemas.default_issue import IssueModel
-from github_ops_manager.synchronize.issues import decide_github_issue_sync_action
-from github_ops_manager.synchronize.models import SyncDecision
-from github_ops_manager.synchronize.results import AllIssueSynchronizationResults, IssueSynchronizationResult, ProcessIssuesResult
+from github_ops_manager.synchronize.issues import sync_github_issues
+from github_ops_manager.synchronize.results import AllIssueSynchronizationResults, ProcessIssuesResult
 from github_ops_manager.utils.helpers import generate_branch_name
 
 logger: BoundLogger = structlog.get_logger(__name__)  # type: ignore
@@ -93,56 +91,6 @@ async def run_process_issues_workflow(
     default_branch = repo_info.default_branch
     await process_pull_requests_for_issues(issues_model.issues, github_adapter, default_branch)
     return ProcessIssuesResult(issue_sync_results)
-
-
-async def sync_github_issues(desired_issues: list[IssueModel], github_adapter: GitHubKitAdapter) -> AllIssueSynchronizationResults:
-    """For each YAML issue, decide whether to create, update, or no-op, and call the API accordingly.
-
-    Returns a list of (yaml_issue, decision, github_issue) tuples.
-    """
-    # Fetch all existing issues from GitHub
-    start_time = time.time()
-    logger.info("Fetching existing issues from GitHub", start_time=start_time)
-    existing_issues = await github_adapter.list_issues(state="all")
-    end_time = time.time()
-    total_time = end_time - start_time
-    logger.info(
-        "Fetched existing issues from GitHub", start_time=start_time, end_time=end_time, duration=total_time, issue_count=len(existing_issues)
-    )
-    github_issue_by_title: dict[str, Issue] = {issue.title: issue for issue in existing_issues}
-
-    results: list[IssueSynchronizationResult] = []
-    for desired_issue in desired_issues:
-        github_issue = github_issue_by_title.get(desired_issue.title)
-        decision = await decide_github_issue_sync_action(desired_issue, github_issue)
-        if decision == SyncDecision.CREATE:
-            github_issue = await github_adapter.create_issue(
-                title=desired_issue.title,
-                body=desired_issue.body,
-                labels=desired_issue.labels,
-                assignees=desired_issue.assignees,
-                milestone=desired_issue.milestone,
-            )
-            results.append(IssueSynchronizationResult(desired_issue, github_issue, decision))
-        elif decision == SyncDecision.UPDATE:
-            if github_issue is not None:
-                await github_adapter.update_issue(
-                    issue_number=github_issue.number,
-                    title=desired_issue.title,
-                    body=desired_issue.body,
-                    labels=desired_issue.labels,
-                    assignees=desired_issue.assignees,
-                    milestone=desired_issue.milestone,
-                )
-                results.append(IssueSynchronizationResult(desired_issue, github_issue, decision))
-            else:
-                raise ValueError("GitHub issue not found")
-        else:
-            if github_issue is not None:
-                results.append(IssueSynchronizationResult(desired_issue, github_issue, decision))
-            else:
-                raise ValueError("GitHub issue not found")
-    return AllIssueSynchronizationResults(results)
 
 
 async def process_pull_requests_for_issues(
