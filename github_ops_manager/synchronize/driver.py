@@ -63,5 +63,6 @@ async def run_process_issues_workflow(
     # Synchronize pull requests for issues that specify a pull_request field.
     repo_info = await github_adapter.get_repository()
     default_branch = repo_info.default_branch
-    await sync_github_pull_requests(issues_model.issues, github_adapter, default_branch)
+    existing_issues = [result.github_issue for result in issue_sync_results.results]
+    await sync_github_pull_requests(issues_model.issues, existing_issues, github_adapter, default_branch)
     return ProcessIssuesResult(issue_sync_results)
