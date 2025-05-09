@@ -13,13 +13,13 @@ from structlog.stdlib import BoundLogger
 
 from github_ops_manager.configuration.models import GitHubAuthenticationType
 from github_ops_manager.github.adapter import GitHubKitAdapter
-from github_ops_manager.processing.models import SyncDecision
 from github_ops_manager.processing.results import AllIssueSynchronizationResults, IssueSynchronizationResult, ProcessIssuesResult
 from github_ops_manager.processing.yaml_processor import (
     YAMLProcessingError,
     YAMLProcessor,
 )
 from github_ops_manager.schemas.default_issue import IssueModel, LabelModel
+from github_ops_manager.synchronize.models import SyncDecision
 from github_ops_manager.utils.helpers import generate_branch_name
 
 logger: BoundLogger = structlog.get_logger(__name__)  # type: ignore
