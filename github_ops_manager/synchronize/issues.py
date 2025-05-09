@@ -118,10 +118,7 @@ async def decide_github_issue_sync_action(desired_issue: IssueModel, github_issu
 
 
 async def sync_github_issues(desired_issues: list[IssueModel], github_adapter: GitHubKitAdapter) -> AllIssueSynchronizationResults:
-    """For each YAML issue, decide whether to create, update, or no-op, and call the API accordingly.
-
-    Returns a list of (yaml_issue, decision, github_issue) tuples.
-    """
+    """For each YAML issue, decide whether to create, update, or no-op, and call the API accordingly."""
     # Fetch all existing issues from GitHub
     start_time = time.time()
     logger.info("Fetching existing issues from GitHub", start_time=start_time)
