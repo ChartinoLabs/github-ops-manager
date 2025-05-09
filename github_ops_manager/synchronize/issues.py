@@ -93,6 +93,7 @@ async def sync_github_issues(desired_issues: list[IssueModel], github_adapter: G
     github_issue_by_title: dict[str, Issue] = {issue.title: issue for issue in existing_issues}
 
     results: list[IssueSynchronizationResult] = []
+    number_of_created_github_issues = 0
     for desired_issue in desired_issues:
         github_issue = github_issue_by_title.get(desired_issue.title)
         decision = await decide_github_issue_sync_action(desired_issue, github_issue)
@@ -104,6 +105,7 @@ async def sync_github_issues(desired_issues: list[IssueModel], github_adapter: G
                 assignees=desired_issue.assignees,
                 milestone=desired_issue.milestone,
             )
+            number_of_created_github_issues += 1
             results.append(IssueSynchronizationResult(desired_issue, github_issue, decision))
         elif decision == SyncDecision.UPDATE:
             if github_issue is not None:
@@ -123,7 +125,7 @@ async def sync_github_issues(desired_issues: list[IssueModel], github_adapter: G
                 results.append(IssueSynchronizationResult(desired_issue, github_issue, decision))
             else:
                 raise ValueError("GitHub issue not found")
-    return AllIssueSynchronizationResults(results)
+    return AllIssueSynchronizationResults(results, existing_issues, len(existing_issues) + number_of_created_github_issues)
 
 
 async def render_issue_bodies(issues_yaml_model: IssuesYAMLModel) -> IssuesYAMLModel:
