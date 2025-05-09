@@ -8,7 +8,7 @@ import pytest
 
 from github_ops_manager.github.adapter import GitHubKitAdapter
 from github_ops_manager.processing.models import SyncDecision
-from github_ops_manager.processing.workflow_runner import compare_github_issue_field, decide_github_issue_sync_action, value_is_noney
+from github_ops_manager.synchronize.workflow_runner import compare_github_issue_field, decide_github_issue_sync_action, value_is_noney
 
 
 @pytest.mark.asyncio
@@ -179,7 +179,7 @@ async def test_sync_github_issues(
     adapter.create_issue.return_value = SimpleNamespace(number=1, title="A")
     adapter.update_issue.return_value = None
 
-    from github_ops_manager.processing.workflow_runner import sync_github_issues
+    from github_ops_manager.synchronize.workflow_runner import sync_github_issues
 
     results = await sync_github_issues(desired_issues, adapter)
     # Extract the decisions from the results
