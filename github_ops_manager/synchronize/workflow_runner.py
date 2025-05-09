@@ -18,6 +18,7 @@ from github_ops_manager.processing.yaml_processor import (
     YAMLProcessor,
 )
 from github_ops_manager.schemas.default_issue import IssueModel, LabelModel
+from github_ops_manager.synchronize.issues import decide_github_issue_label_sync_action
 from github_ops_manager.synchronize.models import SyncDecision
 from github_ops_manager.synchronize.results import AllIssueSynchronizationResults, IssueSynchronizationResult, ProcessIssuesResult
 from github_ops_manager.utils.helpers import generate_branch_name
@@ -111,21 +112,6 @@ async def decide_github_label_sync_action(desired_label: LabelModel, github_labe
 
     logger.info("Label is up to date", label_name=desired_label.name)
     return SyncDecision.NOOP
-
-
-async def decide_github_issue_label_sync_action(desired_label: str, github_issue: Issue) -> SyncDecision:
-    """Compare a YAML label and a GitHub issue, and decide whether to create, update, or no-op.
-
-    Key is label name.
-    """
-    for github_label in github_issue.labels:
-        if isinstance(github_label, str):
-            if github_label == desired_label:
-                return SyncDecision.NOOP
-        else:
-            if github_label.name == desired_label:
-                return SyncDecision.NOOP
-    return SyncDecision.UPDATE
 
 
 async def value_is_noney(value: Any) -> bool:
