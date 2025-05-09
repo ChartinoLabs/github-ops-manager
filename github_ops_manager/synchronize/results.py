@@ -21,9 +21,16 @@ class IssueSynchronizationResult:
 class AllIssueSynchronizationResults:
     """Contains results of the issue synchronization workflow for all issues."""
 
-    def __init__(self, results: list[IssueSynchronizationResult]) -> None:
+    def __init__(
+        self,
+        results: list[IssueSynchronizationResult],
+        github_issues_before_sync: list[Issue],
+        expected_number_of_github_issues_after_sync: int,
+    ) -> None:
         """Initialize the result with a list of issue synchronization results."""
         self.results = results
+        self.github_issues_before_sync = github_issues_before_sync
+        self.expected_number_of_github_issues_after_sync = expected_number_of_github_issues_after_sync
 
 
 class ProcessIssuesResult:
