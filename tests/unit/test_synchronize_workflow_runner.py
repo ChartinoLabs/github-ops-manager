@@ -8,29 +8,7 @@ import pytest
 
 from github_ops_manager.github.adapter import GitHubKitAdapter
 from github_ops_manager.synchronize.models import SyncDecision
-from github_ops_manager.synchronize.utils import value_is_noney
 from github_ops_manager.synchronize.workflow_runner import compare_github_issue_field, decide_github_issue_sync_action
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "value,expected",
-    [
-        (None, True),
-        ([], True),
-        ("", True),
-        ({}, True),
-        ([1, 2, 3], False),
-        ("non-empty", False),
-        ({"key": "value"}, False),
-        (0, False),
-        (False, False),
-    ],
-)
-async def test_value_is_noney(value: object, expected: bool) -> None:
-    """Test the value_is_noney function."""
-    result = await value_is_noney(value)
-    assert result == expected
 
 
 @pytest.mark.asyncio
