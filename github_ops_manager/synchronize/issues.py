@@ -3,14 +3,16 @@
 import time
 from typing import Any
 
+import jinja2
 from githubkit.versions.latest.models import Issue, IssuePropLabelsItemsOneof1, Label
 
 from github_ops_manager.github.adapter import GitHubKitAdapter
-from github_ops_manager.schemas.default_issue import IssueModel
+from github_ops_manager.schemas.default_issue import IssueModel, IssuesYAMLModel
 from github_ops_manager.synchronize.models import SyncDecision
 from github_ops_manager.synchronize.results import AllIssueSynchronizationResults, IssueSynchronizationResult
 from github_ops_manager.synchronize.utils import value_is_noney
 from github_ops_manager.synchronize.workflow_runner import logger
+from github_ops_manager.utils.templates import construct_jinja2_template
 
 
 async def decide_github_issue_label_sync_action(desired_label: str, github_issue: Issue) -> SyncDecision:
@@ -163,3 +165,26 @@ async def sync_github_issues(desired_issues: list[IssueModel], github_adapter: G
             else:
                 raise ValueError("GitHub issue not found")
     return AllIssueSynchronizationResults(results)
+
+
+async def render_issue_bodies(issues_yaml_model: IssuesYAMLModel) -> IssuesYAMLModel:
+    """Render issue bodies using a provided Jinja2 template.
+
+    This coroutine mutates the input object and returns it.
+    """
+    logger.info("Rendering issue bodies using template", template_path=issues_yaml_model.issue_template)
+    try:
+        template = await construct_jinja2_template(issues_yaml_model.issue_template)
+    except jinja2.TemplateSyntaxError as exc:
+        logger.error("Encountered a syntax error with the provided issue template", issue_template=issues_yaml_model.issue_template, error=str(exc))
+        raise
+
+    for issue in issues_yaml_model.issues:
+        if issue.data is not None:
+            # Render with all issue fields available
+            render_context = issue.model_dump()
+            try:
+                issue.body = template.render(**render_context)
+            except jinja2.UndefinedError as exc:
+                logger.error("Failed to render issue body with template", issue_title=issue.title, error=str(exc))
+                raise
