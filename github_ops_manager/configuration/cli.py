@@ -20,18 +20,25 @@ load_dotenv()
 
 typer_app = typer.Typer()
 
-
-def get_context() -> str:
-    """Get the context directory for the GitHub Operations Manager."""
-    return typer.get_app_dir("github_ops_manager")
+# --- Add a new Typer group for repo commands ---
+repo_app = typer.Typer(help="Repository-related commands")
 
 
-@typer_app.command(name="process-issues")
+def repo_callback(ctx: typer.Context, repo: str = typer.Argument(..., help="Repository name (owner/repo).")) -> None:
+    """Set the repository for the current context."""
+    ctx.ensure_object(dict)
+    ctx.obj["repo"] = repo
+
+
+repo_app.callback()(repo_callback)
+
+
+# --- Move process-issues under repo_app ---
+@repo_app.command(name="process-issues")
 def process_issues_cli(
     ctx: typer.Context,
     yaml_path: Path = typer.Argument(envvar="YAML_PATH", help="Path to YAML file for issues."),
     create_prs: bool = typer.Option(False, envvar="CREATE_PRS", help="Create PRs for issues."),
-    repo: str = typer.Argument(envvar="REPO", help="Repository name (owner/repo)."),
     debug: bool = typer.Option(False, envvar="DEBUG", help="Enable debug mode."),
     github_api_url: str = typer.Option("https://api.github.com", envvar="GITHUB_API_URL", help="GitHub API URL."),
     github_pat_token: str = typer.Option(None, envvar="GITHUB_PAT_TOKEN", help="GitHub Personal Access Token."),
@@ -40,6 +47,7 @@ def process_issues_cli(
     github_app_installation_id: int = typer.Option(None, envvar="GITHUB_APP_INSTALLATION_ID", help="GitHub App Installation ID."),
 ) -> None:
     """Processes issues in a GitHub repository."""
+    repo: str = ctx.obj["repo"]
     # Validate GitHub authentication configuration
     github_auth_type = asyncio.run(
         validate_github_authentication_configuration(
@@ -73,13 +81,13 @@ def process_issues_cli(
         typer.echo(f"First issue: {result.issue_synchronization_results.results[0].desired_issue.model_dump()}")
 
 
-@typer_app.command(name="export-issues")
+# --- Move export-issues under repo_app ---
+@repo_app.command(name="export-issues")
 def export_issues_cli(
     ctx: typer.Context,
     output_file: Path | None = typer.Option(None, envvar="OUTPUT_FILE", help="Path to save exported issues."),
     state: str = typer.Option(None, envvar="STATE", help="Filter issues by state (open, closed, all)."),
     label: str = typer.Option(None, envvar="LABEL", help="Filter issues by label."),
-    repo: str = typer.Argument(envvar="REPO", help="Repository name (owner/repo)."),
     debug: bool = typer.Option(False, envvar="DEBUG", help="Enable debug mode."),
     github_api_url: str = typer.Option("https://api.github.com", envvar="GITHUB_API_URL", help="GitHub API URL."),
     github_pat_token: str = typer.Option(None, envvar="GITHUB_PAT_TOKEN", help="GitHub Personal Access Token."),
@@ -88,6 +96,7 @@ def export_issues_cli(
     github_app_installation_id: int = typer.Option(None, envvar="GITHUB_APP_INSTALLATION_ID", help="GitHub App Installation ID."),
 ) -> None:
     """Exports issues from a GitHub repository."""
+    repo: str = ctx.obj["repo"]
     # Validate GitHub authentication configuration
     asyncio.run(
         validate_github_authentication_configuration(
@@ -108,12 +117,12 @@ def export_issues_cli(
     # Placeholder for actual export logic
 
 
-@typer_app.command(name="fetch-files")
+# --- Move fetch-files under repo_app ---
+@repo_app.command(name="fetch-files")
 def fetch_files_cli(
     ctx: typer.Context,
     file_paths: list[str] = typer.Argument(..., help="One or more file paths to fetch from the repository (relative to repo root)."),
     branch: str | None = typer.Option(None, "--branch", help="Branch, tag, or commit SHA to fetch from. Defaults to the default branch."),
-    repo: str = typer.Argument(envvar="REPO", help="Repository name (owner/repo)."),
     debug: bool = typer.Option(False, envvar="DEBUG", help="Enable debug mode."),
     github_api_url: str = typer.Option("https://api.github.com", envvar="GITHUB_API_URL", help="GitHub API URL."),
     github_pat_token: str = typer.Option(None, envvar="GITHUB_PAT_TOKEN", help="GitHub Personal Access Token."),
@@ -122,6 +131,7 @@ def fetch_files_cli(
     github_app_installation_id: int = typer.Option(None, envvar="GITHUB_APP_INSTALLATION_ID", help="GitHub App Installation ID."),
 ) -> None:
     """Fetch one or more files from the repository and download them locally at the same relative path."""
+    repo: str = ctx.obj["repo"]
     # Validate GitHub authentication configuration
     github_auth_type = asyncio.run(
         validate_github_authentication_configuration(
@@ -173,6 +183,11 @@ def fetch_files_cli(
     asyncio.run(fetch_files())
 
 
+# --- Register the repo_app as a sub-app of the main Typer app ---
+typer_app.add_typer(repo_app, name="repo")
+
+
+# Restore sync-new-files as a top-level command
 @typer_app.command(name="sync-new-files")
 def sync_new_files_cli(
     issues_file: Path = typer.Argument(..., help="Path to the issues YAML file."),

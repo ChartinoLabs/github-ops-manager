@@ -35,16 +35,12 @@ def get_cli_script_path() -> str:
 
 
 def get_cli_with_starting_args() -> list[str]:
-    """Get the CLI script path with the starting arguments.
-
-    Returns:
-        list[str]: The CLI script path with the starting arguments.
-    """
-    repo = os.getenv("REPO")
+    """Get the CLI script path with the starting arguments for the new CLI structure."""
+    repo: str | None = os.getenv("REPO")
     if repo is None:
         raise ValueError("REPO environment variable not set")
-    base_cli = get_cli_script_path()
-    return [base_cli, repo]
+    base_cli: str = get_cli_script_path()
+    return [base_cli, "repo", repo]
 
 
 def generate_unique_issue_title(prefix: str = "IntegrationTest") -> str:
@@ -128,14 +124,10 @@ def get_github_adapter() -> GitHubKitAdapter:
 
 
 def run_process_issues_cli(yaml_path: str) -> subprocess.CompletedProcess[str]:
-    """Run the process-issues CLI command with the given YAML file.
-
-    Returns the CompletedProcess object.
-    Raises subprocess.CalledProcessError if the command fails.
-    """
-    cli_with_starting_args = get_cli_with_starting_args()
-    cli_command = cli_with_starting_args + ["process-issues", yaml_path]
-    result = subprocess.run(
+    """Run the process-issues CLI command with the given YAML file."""
+    cli_with_starting_args: list[str] = get_cli_with_starting_args()
+    cli_command: list[str] = cli_with_starting_args + ["process-issues", yaml_path]
+    result: subprocess.CompletedProcess[str] = subprocess.run(
         cli_command,
         capture_output=True,
         text=True,
