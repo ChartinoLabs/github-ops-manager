@@ -66,10 +66,19 @@ async def run_process_issues_workflow(
     # Synchronize pull requests for issues that specify a pull_request field.
     repo_info = await github_adapter.get_repository()
     default_branch = repo_info.default_branch
-    existing_issues = [result.github_issue for result in issue_sync_results.results]
+
+    # Refresh issues so that if any new issues were created, they're picked up
+    # as part of Pull Request logic.
+    refreshed_issues = await github_adapter.list_issues()
+
+    # Fetch content of all existing pull requests. This requires us to fetch
+    # a simple list of pull requests, then fetch the content of each pull request.
+    existing_simple_pull_requests = await github_adapter.list_pull_requests()
+    existing_pull_requests = [await github_adapter.get_pull_request(pr.number) for pr in existing_simple_pull_requests]
+
     start_time = time.time()
     logger.info("Processing pull requests", start_time=start_time)
-    await sync_github_pull_requests(issues_model.issues, existing_issues, github_adapter, default_branch)
+    await sync_github_pull_requests(issues_model.issues, refreshed_issues, existing_pull_requests, github_adapter, default_branch)
     end_time = time.time()
     total_time = end_time - start_time
     logger.info("Processed pull requests", start_time=start_time, end_time=end_time, total_time=total_time)
