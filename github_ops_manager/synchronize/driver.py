@@ -67,5 +67,10 @@ async def run_process_issues_workflow(
     repo_info = await github_adapter.get_repository()
     default_branch = repo_info.default_branch
     existing_issues = [result.github_issue for result in issue_sync_results.results]
+    start_time = time.time()
+    logger.info("Processing pull requests", start_time=start_time)
     await sync_github_pull_requests(issues_model.issues, existing_issues, github_adapter, default_branch)
+    end_time = time.time()
+    total_time = end_time - start_time
+    logger.info("Processed pull requests", start_time=start_time, end_time=end_time, total_time=total_time)
     return ProcessIssuesResult(issue_sync_results)
