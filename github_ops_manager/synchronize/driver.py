@@ -32,7 +32,7 @@ async def run_process_issues_workflow(
     try:
         issues_model = processor.load_issues_model([str(yaml_path)])
     except YAMLProcessingError as e:
-        return ProcessIssuesResult(AllIssueSynchronizationResults([]), errors=e.errors)
+        return ProcessIssuesResult(AllIssueSynchronizationResults([], [], 0), errors=e.errors)
 
     # Render Jinja2 templates for issue bodies if provided.
     if issues_model.issue_template:
@@ -79,6 +79,11 @@ async def run_process_issues_workflow(
         refreshed_issues = await github_adapter.list_issues()
         if len(refreshed_issues) == issue_sync_results.expected_number_of_github_issues_after_sync:
             break
+        logger.info(
+            "GitHub API currently has fewer issues than expected",
+            expected=issue_sync_results.expected_number_of_github_issues_after_sync,
+            actual=len(refreshed_issues),
+        )
         await asyncio.sleep(3)
     else:
         logger.warning("GitHub API did not update with new issues in time", max_wait_time=max_wait_time)
