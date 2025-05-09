@@ -82,6 +82,11 @@ class GitHubClientBase(ABC):
 
     # Pull Request CRUD
     @abstractmethod
+    async def get_pull_request(self, pull_request_number: int) -> Any:
+        """Get a pull request for a repository."""
+        pass
+
+    @abstractmethod
     async def create_pull_request(
         self,
         title: str,

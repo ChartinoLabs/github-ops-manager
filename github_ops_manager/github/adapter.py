@@ -238,6 +238,13 @@ class GitHubKitAdapter(GitHubClientBase):
         return response.parsed_data
 
     # Pull Request CRUD
+    async def get_pull_request(self, pull_request_number: int) -> PullRequest:
+        """Get a pull request from the repository."""
+        response: Response[PullRequest] = await self.client.rest.pulls.async_get(
+            owner=self.owner, repo=self.repo_name, pull_number=pull_request_number
+        )
+        return response.parsed_data
+
     @handle_github_422
     async def create_pull_request(
         self,
