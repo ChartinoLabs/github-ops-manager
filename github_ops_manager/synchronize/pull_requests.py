@@ -1,6 +1,7 @@
 """Contains logic for synchronizing pull requests."""
 
 import structlog
+from githubkit.typing import Unset
 from githubkit.versions.latest.models import Issue, PullRequest
 
 from github_ops_manager.github.adapter import GitHubKitAdapter
@@ -36,7 +37,8 @@ async def decide_github_pull_request_file_sync_action(
 async def decide_github_pull_request_sync_action(desired_issue: IssueModel, existing_issue: Issue, github_adapter: GitHubKitAdapter) -> SyncDecision:
     """Compare a YAML issue and a GitHub issue, and decide whether to create, update, or no-op the associated pull request."""
     # First, check if the existing issue has a pull request linked to it.
-    if existing_issue.pull_request is None:
+    existing_pr = existing_issue.pull_request
+    if existing_pr is None or existing_pr is Unset._UNSET:
         logger.info("Existing issue has no pull request linked to it, creating a new one", issue_title=desired_issue.title)
         return SyncDecision.CREATE
 
@@ -44,7 +46,7 @@ async def decide_github_pull_request_sync_action(desired_issue: IssueModel, exis
     pr_fields_to_compare = ["title", "body"]
     for field in pr_fields_to_compare:
         desired_value = getattr(desired_issue.pull_request, field, None)
-        github_value = getattr(existing_issue.pull_request, field, None)
+        github_value = getattr(existing_pr, field, None)
         field_decision = await compare_github_field(desired_value, github_value)
         if field_decision == SyncDecision.UPDATE:
             logger.info(
@@ -65,7 +67,7 @@ async def decide_github_pull_request_sync_action(desired_issue: IssueModel, exis
             return SyncDecision.CREATE
 
     # Next, check the labels of the existing and desired pull request
-    decision = await compare_label_sets(desired_issue.pull_request.labels, getattr(existing_issue.pull_request, "labels", []))
+    decision = await compare_label_sets(desired_issue.pull_request.labels, getattr(existing_pr, "labels", []))
     if decision == SyncDecision.UPDATE:
         logger.info(
             "Existing pull request labels do not match desired labels, updating the pull request",
@@ -81,6 +83,9 @@ async def commit_files_to_branch(
     desired_issue: IssueModel, existing_issue: Issue, desired_branch_name: str, github_adapter: GitHubKitAdapter
 ) -> None:
     """Commit files to a branch."""
+    if desired_issue.pull_request is None:
+        raise ValueError("Desired issue has no pull request associated with it")
+
     files_to_commit: list[tuple[str, str]] = []
     missing_files: list[str] = []
     logger.info("Preparing files to commit for pull request", issue_title=desired_issue.title, branch=desired_branch_name)
@@ -99,7 +104,7 @@ async def commit_files_to_branch(
     # Commit files to branch
     logger.info("Committing files to branch", issue_title=desired_issue.title, branch=desired_branch_name)
     commit_message = (
-        f"chore: attach files for PR '{existing_issue.pull_request.title}' associated with issue '{desired_issue.title}' ({existing_issue.number})"
+        f"chore: attach files for PR '{desired_issue.pull_request.title}' associated with issue '{desired_issue.title}' ({existing_issue.number})"
     )
     await github_adapter.commit_files_to_branch(desired_branch_name, files_to_commit, commit_message)
 
@@ -136,9 +141,11 @@ async def sync_github_pull_request(desired_issue: IssueModel, existing_issue: Is
             body=pr_body,
         )
         logger.info("Created new PR", pr_number=new_pr.number, branch=desired_branch_name)
+        await github_adapter.set_labels_on_issue(new_pr.number, pr_labels)
+        logger.info("Set labels on new PR", pr_number=new_pr.number, labels=pr_labels)
     elif pr_sync_decision == SyncDecision.UPDATE:
         existing_pr = existing_issue.pull_request
-        if existing_pr is None:
+        if existing_pr is None or existing_pr is Unset._UNSET:
             raise ValueError("Existing issue has no pull request linked to it, even though we decided to update it")
         logger.info("Updating existing PR for issue", pr_number=existing_pr.number, branch=desired_branch_name)
         await github_adapter.update_pull_request(
