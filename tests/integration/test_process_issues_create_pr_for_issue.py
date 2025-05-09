@@ -6,33 +6,21 @@ import tempfile
 import uuid
 
 import pytest
-from githubkit import GitHub
 from githubkit.versions.latest.models import PullRequest
 
 from github_ops_manager.github.adapter import GitHubKitAdapter
 from tests.integration.utils import (
     _write_yaml_issues_file,
     get_cli_with_starting_args,
+    get_github_adapter,
 )
-
-
-@pytest.mark.integration
-@pytest.mark.asyncio
-def _get_github_adapter() -> GitHubKitAdapter:
-    token: str | None = os.environ.get("GITHUB_PAT_TOKEN")
-    if not token:
-        pytest.fail("GITHUB_PAT_TOKEN not set in environment")
-    repo_slug = os.environ["REPO"]
-    owner, repo = repo_slug.split("/")
-    client = GitHub(token)
-    return GitHubKitAdapter(client, owner, repo)
 
 
 @pytest.mark.integration
 @pytest.mark.asyncio
 async def test_process_issues_create_pr_for_issue() -> None:
     """Test creating a PR for an issue with a new file via the CLI."""
-    adapter: GitHubKitAdapter = _get_github_adapter()
+    adapter: GitHubKitAdapter = get_github_adapter()
     unique_id: str = str(uuid.uuid4())
     issue_title: str = f"IntegrationTestPR-Issue-{unique_id}"
     pr_title: str = f"IntegrationTestPR-PR-{unique_id}"
