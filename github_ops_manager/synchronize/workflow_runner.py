@@ -17,7 +17,7 @@ from github_ops_manager.processing.yaml_processor import (
     YAMLProcessingError,
     YAMLProcessor,
 )
-from github_ops_manager.schemas.default_issue import IssueModel, LabelModel
+from github_ops_manager.schemas.default_issue import IssueModel
 from github_ops_manager.synchronize.issues import decide_github_issue_label_sync_action
 from github_ops_manager.synchronize.models import SyncDecision
 from github_ops_manager.synchronize.results import AllIssueSynchronizationResults, IssueSynchronizationResult, ProcessIssuesResult
@@ -95,24 +95,6 @@ async def run_process_issues_workflow(
     default_branch = repo_info.default_branch
     await process_pull_requests_for_issues(issues_model.issues, github_adapter, default_branch)
     return ProcessIssuesResult(issue_sync_results)
-
-
-async def decide_github_label_sync_action(desired_label: LabelModel, github_label: Label | None = None) -> SyncDecision:
-    """Compare a YAML label and a GitHub label, and decide whether to create, update, or no-op.
-
-    Key is label name.
-    """
-    # For now, we'll only make decisions based on the label name
-    if github_label is None:
-        logger.info("Label not found in GitHub", label_name=desired_label.name)
-        return SyncDecision.CREATE
-
-    if github_label.name != desired_label.name:
-        logger.info("Label needs to be updated", current_label_name=github_label.name, new_label_name=desired_label.name)
-        return SyncDecision.UPDATE
-
-    logger.info("Label is up to date", label_name=desired_label.name)
-    return SyncDecision.NOOP
 
 
 async def compare_github_issue_field(desired_value: Any, github_value: Any) -> SyncDecision:
