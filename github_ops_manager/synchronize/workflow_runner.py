@@ -21,6 +21,7 @@ from github_ops_manager.schemas.default_issue import IssueModel, LabelModel
 from github_ops_manager.synchronize.issues import decide_github_issue_label_sync_action
 from github_ops_manager.synchronize.models import SyncDecision
 from github_ops_manager.synchronize.results import AllIssueSynchronizationResults, IssueSynchronizationResult, ProcessIssuesResult
+from github_ops_manager.synchronize.utils import value_is_noney
 from github_ops_manager.utils.helpers import generate_branch_name
 
 logger: BoundLogger = structlog.get_logger(__name__)  # type: ignore
@@ -112,19 +113,6 @@ async def decide_github_label_sync_action(desired_label: LabelModel, github_labe
 
     logger.info("Label is up to date", label_name=desired_label.name)
     return SyncDecision.NOOP
-
-
-async def value_is_noney(value: Any) -> bool:
-    """Check if a value is None, an empty list, an empty string, or an empty dict."""
-    if value is None:
-        return True
-    elif isinstance(value, list) and value == []:
-        return True
-    elif isinstance(value, str) and value == "":
-        return True
-    elif isinstance(value, dict) and not value:
-        return True
-    return False
 
 
 async def compare_github_issue_field(desired_value: Any, github_value: Any) -> SyncDecision:

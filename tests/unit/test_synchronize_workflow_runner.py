@@ -8,7 +8,8 @@ import pytest
 
 from github_ops_manager.github.adapter import GitHubKitAdapter
 from github_ops_manager.synchronize.models import SyncDecision
-from github_ops_manager.synchronize.workflow_runner import compare_github_issue_field, decide_github_issue_sync_action, value_is_noney
+from github_ops_manager.synchronize.utils import value_is_noney
+from github_ops_manager.synchronize.workflow_runner import compare_github_issue_field, decide_github_issue_sync_action
 
 
 @pytest.mark.asyncio
