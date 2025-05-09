@@ -7,8 +7,9 @@ from github_ops_manager.configuration.models import GitHubAuthenticationType
 from github_ops_manager.github.adapter import GitHubKitAdapter
 from github_ops_manager.processing.yaml_processor import YAMLProcessingError, YAMLProcessor
 from github_ops_manager.synchronize.issues import render_issue_bodies, sync_github_issues
+from github_ops_manager.synchronize.pull_requests import sync_github_pull_requests
 from github_ops_manager.synchronize.results import AllIssueSynchronizationResults, ProcessIssuesResult
-from github_ops_manager.synchronize.workflow_runner import logger, process_pull_requests_for_issues
+from github_ops_manager.synchronize.workflow_runner import logger
 
 
 async def run_process_issues_workflow(
@@ -62,5 +63,5 @@ async def run_process_issues_workflow(
     # Synchronize pull requests for issues that specify a pull_request field.
     repo_info = await github_adapter.get_repository()
     default_branch = repo_info.default_branch
-    await process_pull_requests_for_issues(issues_model.issues, github_adapter, default_branch)
+    await sync_github_pull_requests(issues_model.issues, github_adapter, default_branch)
     return ProcessIssuesResult(issue_sync_results)
