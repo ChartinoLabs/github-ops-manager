@@ -2,12 +2,14 @@
 
 import asyncio
 import sys
+import traceback
 from pathlib import Path
 
 import typer
 from dotenv import load_dotenv
 
 from github_ops_manager.configuration.reconcile import validate_github_authentication_configuration
+from github_ops_manager.github.adapter import GitHubKitAdapter
 from github_ops_manager.synchronize.driver import run_process_issues_workflow
 
 load_dotenv()
@@ -116,6 +118,62 @@ def export_issues_cli(
     # Here you would call your export logic, e.g. run_export_issues_workflow()
     typer.echo(f"Exporting issues for repo {repo} to {output_file or 'stdout'}")
     # Placeholder for actual export logic
+
+
+@typer_app.command(name="fetch-files")
+def fetch_files_cli(
+    ctx: typer.Context,
+    file_paths: list[str] = typer.Argument(..., help="One or more file paths to fetch from the repository (relative to repo root)."),
+    branch: str | None = typer.Option(None, "--branch", help="Branch, tag, or commit SHA to fetch from. Defaults to the default branch."),
+) -> None:
+    """Fetch one or more files from the repository and download them locally at the same relative path."""
+    repo: str = ctx.obj["repo"]
+    github_api_url: str = ctx.obj["github_api_url"]
+    github_pat_token: str | None = ctx.obj["github_pat_token"]
+    github_app_id: int | None = ctx.obj["github_app_id"]
+    github_app_private_key_path: Path | None = ctx.obj["github_app_private_key_path"]
+    github_app_installation_id: int | None = ctx.obj["github_app_installation_id"]
+    github_auth_type = ctx.obj["github_auth_type"]
+
+    async def fetch_files() -> None:
+        adapter = await GitHubKitAdapter.create(
+            repo=repo,
+            github_auth_type=github_auth_type,
+            github_pat_token=github_pat_token,
+            github_app_id=github_app_id,
+            github_app_private_key_path=github_app_private_key_path,
+            github_app_installation_id=github_app_installation_id,
+            github_api_url=github_api_url,
+        )
+        # Determine branch
+        if branch:
+            use_branch = branch
+        else:
+            repo_info = await adapter.get_repository()
+            default_branch = getattr(repo_info, "default_branch", None)
+            if not isinstance(default_branch, str) or not default_branch:
+                typer.echo("Could not determine default branch.", err=True)
+                raise typer.Exit(1)
+            use_branch = default_branch
+        downloaded: list[str] = []
+        for file_path in file_paths:
+            try:
+                content: str = await adapter.get_file_content_from_pull_request(file_path, use_branch)
+            except Exception as exc:
+                typer.echo(f"Error fetching '{file_path}' from branch '{use_branch}': {exc}", err=True)
+                traceback.print_exc()
+                raise typer.Exit(1) from exc
+            # Write to local file, creating directories as needed
+            local_path = Path(file_path)
+            if local_path.parent != Path(""):
+                local_path.parent.mkdir(parents=True, exist_ok=True)
+            local_path.write_text(content, encoding="utf-8")
+            downloaded.append(str(local_path))
+        typer.echo(f"Successfully downloaded {len(downloaded)} file(s) from branch '{use_branch}':")
+        for path in downloaded:
+            typer.echo(f"  - {path}")
+
+    asyncio.run(fetch_files())
 
 
 if __name__ == "__main__":
