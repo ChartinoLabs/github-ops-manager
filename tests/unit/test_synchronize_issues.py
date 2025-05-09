@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from github_ops_manager.github.adapter import GitHubKitAdapter
-from github_ops_manager.synchronize.issues import compare_github_issue_field, decide_github_issue_sync_action
+from github_ops_manager.synchronize.issues import compare_github_issue_field, decide_github_issue_label_sync_action, decide_github_issue_sync_action
 from github_ops_manager.synchronize.models import SyncDecision
 
 
@@ -167,3 +167,28 @@ async def test_sync_github_issues(
     # Check that the correct adapter methods were called the expected number of times
     assert adapter.create_issue.call_count == expected_decisions.count(SyncDecision.CREATE)
     assert adapter.update_issue.call_count == expected_decisions.count(SyncDecision.UPDATE)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "desired_label, github_labels, expected",
+    [
+        # Label present as string
+        ("bug", ["bug", "feature"], SyncDecision.NOOP),
+        ("enhancement", ["bug", "feature"], SyncDecision.UPDATE),
+        # Label present as object with name
+        ("bug", [SimpleNamespace(name="bug"), SimpleNamespace(name="feature")], SyncDecision.NOOP),
+        ("enhancement", [SimpleNamespace(name="bug"), SimpleNamespace(name="feature")], SyncDecision.UPDATE),
+        # Mixed types
+        ("bug", ["bug", SimpleNamespace(name="feature")], SyncDecision.NOOP),
+        ("feature", ["bug", SimpleNamespace(name="feature")], SyncDecision.NOOP),
+        ("enhancement", ["bug", SimpleNamespace(name="feature")], SyncDecision.UPDATE),
+        # Empty labels
+        ("bug", [], SyncDecision.UPDATE),
+    ],
+)
+async def test_decide_github_issue_label_sync_action(desired_label: str, github_labels: list[Any], expected: SyncDecision) -> None:
+    """Test the decide_github_issue_label_sync_action function."""
+    github_issue = SimpleNamespace(labels=github_labels)
+    result = await decide_github_issue_label_sync_action(desired_label, github_issue)
+    assert result == expected
