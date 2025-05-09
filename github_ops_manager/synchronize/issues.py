@@ -4,13 +4,13 @@ import time
 
 import jinja2
 import structlog
-from githubkit.versions.latest.models import Issue, IssuePropLabelsItemsOneof1, Label
+from githubkit.versions.latest.models import Issue
 
 from github_ops_manager.github.adapter import GitHubKitAdapter
 from github_ops_manager.schemas.default_issue import IssueModel, IssuesYAMLModel
 from github_ops_manager.synchronize.models import SyncDecision
 from github_ops_manager.synchronize.results import AllIssueSynchronizationResults, IssueSynchronizationResult
-from github_ops_manager.synchronize.utils import compare_github_field
+from github_ops_manager.synchronize.utils import compare_github_field, compare_label_sets
 from github_ops_manager.utils.templates import construct_jinja2_template
 
 logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)
@@ -45,34 +45,14 @@ async def decide_github_issue_sync_action(desired_issue: IssueModel, github_issu
     for field in fields_to_compare:
         # Special analysis for labels
         if field == "labels":
-            if desired_issue.labels is None:
-                logger.info("Issue has no labels", issue_title=desired_issue.title)
-                return SyncDecision.NOOP
-            for desired_label in desired_issue.labels:
-                label_decision = await decide_github_issue_label_sync_action(desired_label, github_issue)
-                if label_decision == SyncDecision.UPDATE:
-                    logger.info(
-                        "Issue needs to be updated (labels differ)",
-                        issue_title=desired_issue.title,
-                        issue_field="labels",
-                        current_value=github_issue.labels,
-                        new_value=desired_issue.labels,
-                    )
-                    return SyncDecision.UPDATE
-            # Now check for labels that need to be removed
-            desired_labels_set = set(desired_issue.labels)
-            github_labels_set = set(
-                label.name if isinstance(label, Label | IssuePropLabelsItemsOneof1) else label for label in getattr(github_issue, "labels", [])
-            )
-            extra_labels = github_labels_set - desired_labels_set
-            if extra_labels:
+            decision = await compare_label_sets(desired_issue.labels, getattr(github_issue, "labels", []))
+            if decision == SyncDecision.UPDATE:
                 logger.info(
-                    "Issue needs to be updated (labels to remove)",
+                    "Issue needs to be updated (labels differ)",
                     issue_title=desired_issue.title,
                     issue_field="labels",
-                    current_value=github_issue.labels,
+                    current_value=getattr(github_issue, "labels", []),
                     new_value=desired_issue.labels,
-                    labels_to_remove=list(extra_labels),
                 )
                 return SyncDecision.UPDATE
         else:
