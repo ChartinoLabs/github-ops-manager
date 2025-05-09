@@ -8,7 +8,7 @@ import typer
 from dotenv import load_dotenv
 
 from github_ops_manager.configuration.reconcile import validate_github_authentication_configuration
-from github_ops_manager.processing.workflow_runner import run_process_issues_workflow
+from github_ops_manager.synchronize.driver import run_process_issues_workflow
 
 load_dotenv()
 
