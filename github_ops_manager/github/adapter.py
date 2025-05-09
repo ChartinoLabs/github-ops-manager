@@ -158,9 +158,11 @@ class GitHubKitAdapter(GitHubClientBase):
         )
         return response.parsed_data
 
-    async def list_issues(self, **kwargs: Any) -> list[Issue]:
+    async def list_issues(self, state: Literal["open", "closed"] | None = "open", **kwargs: Any) -> list[Issue]:
         """List issues for a repository."""
-        response: Response[list[Issue]] = await self.client.rest.issues.async_list_for_repo(owner=self.owner, repo=self.repo_name, **kwargs)
+        response: Response[list[Issue]] = await self.client.rest.issues.async_list_for_repo(
+            owner=self.owner, repo=self.repo_name, state=state, **kwargs
+        )
         return response.parsed_data
 
     @handle_github_422
@@ -301,9 +303,11 @@ class GitHubKitAdapter(GitHubClientBase):
         )
         return response.parsed_data
 
-    async def list_pull_requests(self, **kwargs: Any) -> list[PullRequestSimple]:
+    async def list_pull_requests(self, state: Literal["open", "closed"] | None = "open", **kwargs: Any) -> list[PullRequestSimple]:
         """List pull requests for a repository."""
-        response: Response[list[PullRequestSimple]] = await self.client.rest.pulls.async_list(owner=self.owner, repo=self.repo_name, **kwargs)
+        response: Response[list[PullRequestSimple]] = await self.client.rest.pulls.async_list(
+            owner=self.owner, repo=self.repo_name, state=state, **kwargs
+        )
         return response.parsed_data
 
     @handle_github_422
