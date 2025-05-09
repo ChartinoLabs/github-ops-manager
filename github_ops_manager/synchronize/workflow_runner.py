@@ -4,7 +4,6 @@
 
 import time
 from pathlib import Path
-from typing import Any
 
 import jinja2
 import structlog
@@ -18,10 +17,9 @@ from github_ops_manager.processing.yaml_processor import (
     YAMLProcessor,
 )
 from github_ops_manager.schemas.default_issue import IssueModel
-from github_ops_manager.synchronize.issues import decide_github_issue_label_sync_action
+from github_ops_manager.synchronize.issues import compare_github_issue_field, decide_github_issue_label_sync_action
 from github_ops_manager.synchronize.models import SyncDecision
 from github_ops_manager.synchronize.results import AllIssueSynchronizationResults, IssueSynchronizationResult, ProcessIssuesResult
-from github_ops_manager.synchronize.utils import value_is_noney
 from github_ops_manager.utils.helpers import generate_branch_name
 
 logger: BoundLogger = structlog.get_logger(__name__)  # type: ignore
@@ -95,25 +93,6 @@ async def run_process_issues_workflow(
     default_branch = repo_info.default_branch
     await process_pull_requests_for_issues(issues_model.issues, github_adapter, default_branch)
     return ProcessIssuesResult(issue_sync_results)
-
-
-async def compare_github_issue_field(desired_value: Any, github_value: Any) -> SyncDecision:
-    """Compare a YAML field and a GitHub field, and decide whether to create, update, or no-op.
-
-    Key is field name.
-    """
-    desired_value_is_noney = await value_is_noney(desired_value)
-    github_value_is_noney = await value_is_noney(github_value)
-    if desired_value_is_noney and github_value_is_noney:
-        return SyncDecision.NOOP
-    elif desired_value_is_noney:
-        return SyncDecision.CREATE
-    elif github_value_is_noney:
-        return SyncDecision.UPDATE
-    elif desired_value == github_value:
-        return SyncDecision.NOOP
-    else:
-        return SyncDecision.UPDATE
 
 
 async def decide_github_issue_sync_action(desired_issue: IssueModel, github_issue: Issue | None = None) -> SyncDecision:
