@@ -5,8 +5,6 @@ from pathlib import Path
 import jinja2
 import structlog
 
-from github_ops_manager.utils.exceptions import FileNotFoundError
-
 logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)
 
 
