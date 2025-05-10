@@ -24,10 +24,33 @@ typer_app = typer.Typer(pretty_exceptions_show_locals=False)
 repo_app = typer.Typer(help="Repository-related commands")
 
 
-def repo_callback(ctx: typer.Context, repo: str = typer.Argument(..., help="Repository name (owner/repo).")) -> None:
+def repo_callback(
+    ctx: typer.Context,
+    repo: str = typer.Argument(..., help="Repository name (owner/repo)."),
+    github_api_url: str = typer.Option("https://api.github.com", envvar="GITHUB_API_URL", help="GitHub API URL."),
+    github_pat_token: str = typer.Option(None, envvar="GITHUB_PAT_TOKEN", help="GitHub Personal Access Token."),
+    github_app_id: int = typer.Option(None, envvar="GITHUB_APP_ID", help="GitHub App ID."),
+    github_app_private_key_path: Path | None = typer.Option(None, envvar="GITHUB_APP_PRIVATE_KEY_PATH", help="Path to GitHub App private key."),
+    github_app_installation_id: int = typer.Option(None, envvar="GITHUB_APP_INSTALLATION_ID", help="GitHub App Installation ID."),
+) -> None:
     """Set the repository for the current context."""
     ctx.ensure_object(dict)
     ctx.obj["repo"] = repo
+    ctx.obj["github_api_url"] = github_api_url
+    ctx.obj["github_pat_token"] = github_pat_token
+    ctx.obj["github_app_id"] = github_app_id
+    ctx.obj["github_app_private_key_path"] = github_app_private_key_path
+    ctx.obj["github_app_installation_id"] = github_app_installation_id
+    # Validate GitHub authentication configuration
+    github_auth_type = asyncio.run(
+        validate_github_authentication_configuration(
+            github_pat_token=github_pat_token,
+            github_app_id=github_app_id,
+            github_app_private_key_path=github_app_private_key_path,
+            github_app_installation_id=github_app_installation_id,
+        )
+    )
+    ctx.obj["github_auth_type"] = github_auth_type
 
 
 repo_app.callback()(repo_callback)
@@ -40,23 +63,15 @@ def process_issues_cli(
     yaml_path: Path = typer.Argument(envvar="YAML_PATH", help="Path to YAML file for issues."),
     create_prs: bool = typer.Option(False, envvar="CREATE_PRS", help="Create PRs for issues."),
     debug: bool = typer.Option(False, envvar="DEBUG", help="Enable debug mode."),
-    github_api_url: str = typer.Option("https://api.github.com", envvar="GITHUB_API_URL", help="GitHub API URL."),
-    github_pat_token: str = typer.Option(None, envvar="GITHUB_PAT_TOKEN", help="GitHub Personal Access Token."),
-    github_app_id: int = typer.Option(None, envvar="GITHUB_APP_ID", help="GitHub App ID."),
-    github_app_private_key_path: Path | None = typer.Option(None, envvar="GITHUB_APP_PRIVATE_KEY_PATH", help="Path to GitHub App private key."),
-    github_app_installation_id: int = typer.Option(None, envvar="GITHUB_APP_INSTALLATION_ID", help="GitHub App Installation ID."),
 ) -> None:
     """Processes issues in a GitHub repository."""
     repo: str = ctx.obj["repo"]
-    # Validate GitHub authentication configuration
-    github_auth_type = asyncio.run(
-        validate_github_authentication_configuration(
-            github_pat_token=github_pat_token,
-            github_app_id=github_app_id,
-            github_app_private_key_path=github_app_private_key_path,
-            github_app_installation_id=github_app_installation_id,
-        )
-    )
+    github_api_url: str = ctx.obj["github_api_url"]
+    github_pat_token: str = ctx.obj["github_pat_token"]
+    github_app_id: int = ctx.obj["github_app_id"]
+    github_app_private_key_path: Path | None = ctx.obj["github_app_private_key_path"]
+    github_app_installation_id: int = ctx.obj["github_app_installation_id"]
+    github_auth_type = ctx.obj["github_auth_type"]
     # Run the workflow
     result = asyncio.run(
         run_process_issues_workflow(
@@ -89,23 +104,15 @@ def export_issues_cli(
     state: str = typer.Option(None, envvar="STATE", help="Filter issues by state (open, closed, all)."),
     label: str = typer.Option(None, envvar="LABEL", help="Filter issues by label."),
     debug: bool = typer.Option(False, envvar="DEBUG", help="Enable debug mode."),
-    github_api_url: str = typer.Option("https://api.github.com", envvar="GITHUB_API_URL", help="GitHub API URL."),
-    github_pat_token: str = typer.Option(None, envvar="GITHUB_PAT_TOKEN", help="GitHub Personal Access Token."),
-    github_app_id: int = typer.Option(None, envvar="GITHUB_APP_ID", help="GitHub App ID."),
-    github_app_private_key_path: Path | None = typer.Option(None, envvar="GITHUB_APP_PRIVATE_KEY_PATH", help="Path to GitHub App private key."),
-    github_app_installation_id: int = typer.Option(None, envvar="GITHUB_APP_INSTALLATION_ID", help="GitHub App Installation ID."),
 ) -> None:
     """Exports issues from a GitHub repository."""
     repo: str = ctx.obj["repo"]
-    # Validate GitHub authentication configuration
-    asyncio.run(
-        validate_github_authentication_configuration(
-            github_pat_token=github_pat_token,
-            github_app_id=github_app_id,
-            github_app_private_key_path=github_app_private_key_path,
-            github_app_installation_id=github_app_installation_id,
-        )
-    )
+    # github_api_url: str = ctx.obj["github_api_url"]
+    github_pat_token: str = ctx.obj["github_pat_token"]
+    github_app_id: int = ctx.obj["github_app_id"]
+    github_app_private_key_path: Path | None = ctx.obj["github_app_private_key_path"]
+    github_app_installation_id: int = ctx.obj["github_app_installation_id"]
+    # github_auth_type = ctx.obj["github_auth_type"]
     if not repo:
         typer.echo("Repository must be provided via --repo or REPO env var.", err=True)
         sys.exit(1)
