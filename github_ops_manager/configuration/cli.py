@@ -18,7 +18,7 @@ from github_ops_manager.synchronize.driver import run_process_issues_workflow
 
 load_dotenv()
 
-typer_app = typer.Typer()
+typer_app = typer.Typer(pretty_exceptions_show_locals=False)
 
 # --- Add a new Typer group for repo commands ---
 repo_app = typer.Typer(help="Repository-related commands")
