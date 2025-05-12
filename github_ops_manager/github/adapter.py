@@ -84,6 +84,12 @@ class GitHubKitAdapter(GitHubClientBase):
     ) -> Self:
         """Create a new GitHub client adapter."""
         owner, repo_name = await split_repository_in_configuration(repo=repo)
+        logger.info(
+            "Creating client for GitHub instance and repository",
+            github_api_url=github_api_url,
+            owner=owner,
+            repo_name=repo_name,
+        )
         client = await get_github_client(
             repo=repo,
             github_auth_type=github_auth_type,
