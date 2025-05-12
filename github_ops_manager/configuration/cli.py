@@ -138,6 +138,7 @@ def fetch_files_cli(
     github_app_installation_id: int = typer.Option(None, envvar="GITHUB_APP_INSTALLATION_ID", help="GitHub App Installation ID."),
 ) -> None:
     """Fetch one or more files from the repository and download them locally at the same relative path."""
+    print(github_api_url)
     repo: str = ctx.obj["repo"]
     # Validate GitHub authentication configuration
     github_auth_type = asyncio.run(
