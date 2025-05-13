@@ -206,10 +206,13 @@ def sync_new_files_cli(
 ) -> None:
     """Detect new files in the current git repo and add issues/PRs for each to the issues file."""
     # Change to the parent directory of the issues file
+    typer.echo(f"Changing directory to {issues_file.parent.absolute()}")
     os.chdir(issues_file.parent)
     # 1. Find new (untracked) .py and .robot files
+    cmd = ["git", "ls-files", "--others", "--exclude-standard", "*.py", "*.robot"]
+    typer.echo(f"Running command: {' '.join(cmd)}")
     try:
-        result = subprocess.run(["git", "ls-files", "--others", "--exclude-standard", "*.py", "*.robot"], capture_output=True, text=True, check=True)
+        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
         new_files: list[str] = [f for f in result.stdout.splitlines() if f.strip()]
     except Exception as exc:
         typer.echo(f"Error running git to find new files: {exc}", err=True)
