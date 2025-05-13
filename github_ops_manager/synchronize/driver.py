@@ -117,6 +117,10 @@ async def run_process_issues_workflow(
     for issue in issues_model.issues:
         if issue.pull_request:
             for file in issue.pull_request.files:
+                if file.startswith("/"):
+                    # If the file starts with a slash, it's an
+                    # absolute path already.
+                    continue
                 file = str(yaml_dir / file)
 
     start_time = time.time()
