@@ -108,6 +108,17 @@ async def run_process_issues_workflow(
     refresh_duration = refresh_end_time - refresh_start_time
     logger.info("Refreshed all GitHub resources", duration=round(refresh_duration, 2))
 
+    # Identify directory that YAML file is in. All files attached to pull
+    # requests will be relative to this directory.
+    yaml_dir = yaml_path.parent
+
+    # Iterate through all issues with pull requests and modify them to be the
+    # absolute filepaths of the files in the pull requests.
+    for issue in issues_model.issues:
+        if issue.pull_request:
+            for file in issue.pull_request.files:
+                file = str(yaml_dir / file)
+
     start_time = time.time()
     logger.info("Processing pull requests", start_time=start_time)
     await sync_github_pull_requests(issues_model.issues, refreshed_issues, existing_pull_requests, github_adapter, default_branch)
