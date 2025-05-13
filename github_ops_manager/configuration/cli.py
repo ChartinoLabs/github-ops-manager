@@ -207,9 +207,9 @@ def sync_new_files_cli(
     """Detect new files in the current git repo and add issues/PRs for each to the issues file."""
     # Change to the parent directory of the issues file
     os.chdir(issues_file.parent)
-    # 1. Find new (untracked) files
+    # 1. Find new (untracked) .py and .robot files
     try:
-        result = subprocess.run(["git", "ls-files", "--others", "--exclude-standard"], capture_output=True, text=True, check=True)
+        result = subprocess.run(["git", "ls-files", "--others", "--exclude-standard", "*.py", "*.robot"], capture_output=True, text=True, check=True)
         new_files: list[str] = [f for f in result.stdout.splitlines() if f.strip()]
     except Exception as exc:
         typer.echo(f"Error running git to find new files: {exc}", err=True)
