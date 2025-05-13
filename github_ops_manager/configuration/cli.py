@@ -1,6 +1,7 @@
 """Defines the Command Line Interface (CLI) using Typer."""
 
 import asyncio
+import os
 import subprocess
 import sys
 import traceback
@@ -204,6 +205,8 @@ def sync_new_files_cli(
     labels: Annotated[str, Option("--labels", help="Comma-separated labels to assign to each created issue and pull request.")] = "",
 ) -> None:
     """Detect new files in the current git repo and add issues/PRs for each to the issues file."""
+    # Change to the parent directory of the issues file
+    os.chdir(issues_file.parent)
     # 1. Find new (untracked) files
     try:
         result = subprocess.run(["git", "ls-files", "--others", "--exclude-standard"], capture_output=True, text=True, check=True)
