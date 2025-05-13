@@ -116,12 +116,15 @@ async def run_process_issues_workflow(
     # absolute filepaths of the files in the pull requests.
     for issue in issues_model.issues:
         if issue.pull_request:
+            new_files = []
             for file in issue.pull_request.files:
                 if file.startswith("/"):
                     # If the file starts with a slash, it's an
                     # absolute path already.
-                    continue
-                file = str(yaml_dir / file)
+                    new_files.append(file)
+                else:
+                    new_files.append(str(yaml_dir / file))
+            issue.pull_request.files = new_files
 
     start_time = time.time()
     logger.info("Processing pull requests", start_time=start_time)
