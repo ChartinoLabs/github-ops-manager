@@ -142,7 +142,6 @@ def fetch_files_cli(
     github_app_private_key_path: Path | None = ctx.obj["github_app_private_key_path"]
     github_app_installation_id: int = ctx.obj["github_app_installation_id"]
     github_auth_type = ctx.obj["github_auth_type"]
-    print(github_api_url)
     # Validate GitHub authentication configuration
     github_auth_type = asyncio.run(
         validate_github_authentication_configuration(
