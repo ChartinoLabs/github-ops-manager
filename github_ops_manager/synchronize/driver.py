@@ -112,23 +112,9 @@ async def run_process_issues_workflow(
     # requests will be relative to this directory.
     yaml_dir = yaml_path.parent
 
-    # Iterate through all issues with pull requests and modify them to be the
-    # absolute filepaths of the files in the pull requests.
-    for issue in issues_model.issues:
-        if issue.pull_request:
-            new_files = []
-            for file in issue.pull_request.files:
-                if file.startswith("/"):
-                    # If the file starts with a slash, it's an
-                    # absolute path already.
-                    new_files.append(file)
-                else:
-                    new_files.append(str(yaml_dir / file))
-            issue.pull_request.files = new_files
-
     start_time = time.time()
     logger.info("Processing pull requests", start_time=start_time)
-    await sync_github_pull_requests(issues_model.issues, refreshed_issues, existing_pull_requests, github_adapter, default_branch)
+    await sync_github_pull_requests(issues_model.issues, refreshed_issues, existing_pull_requests, github_adapter, default_branch, yaml_dir)
     end_time = time.time()
     total_time = end_time - start_time
     logger.info("Processed pull requests", start_time=start_time, end_time=end_time, duration=round(total_time, 2))

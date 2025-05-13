@@ -1,5 +1,7 @@
 """Contains logic for synchronizing pull requests."""
 
+from pathlib import Path
+
 import structlog
 from githubkit.versions.latest.models import Issue, PullRequest
 
@@ -47,15 +49,14 @@ async def get_pull_request_associated_with_issue(issue: Issue, existing_pull_req
     return None
 
 
-async def get_desired_pull_request_file_content(desired_issue: IssueModel) -> list[tuple[str, str]]:
+async def get_desired_pull_request_file_content(base_directory: Path, desired_issue: IssueModel) -> list[tuple[str, str]]:
     """Get the content of the desired pull request files."""
     if desired_issue.pull_request is None:
         raise ValueError("Desired issue has no pull request associated with it")
-    files = []
+    files: list[tuple[str, str]] = []
     for file in desired_issue.pull_request.files:
-        with open(file, encoding="utf-8") as f:
-            content = f.read()
-        files.append((file, content))
+        file_path = base_directory / file
+        files.append((file, file_path.read_text(encoding="utf-8")))
     return files
 
 
@@ -127,7 +128,7 @@ async def decide_github_pull_request_sync_action(desired_issue: IssueModel, exis
 
 
 async def commit_files_to_branch(
-    desired_issue: IssueModel, existing_issue: Issue, desired_branch_name: str, github_adapter: GitHubKitAdapter
+    desired_issue: IssueModel, existing_issue: Issue, desired_branch_name: str, base_directory: Path, github_adapter: GitHubKitAdapter
 ) -> None:
     """Commit files to a branch."""
     if desired_issue.pull_request is None:
@@ -138,7 +139,7 @@ async def commit_files_to_branch(
     logger.info("Preparing files to commit for pull request", issue_title=desired_issue.title, branch=desired_branch_name)
     for file_path in desired_issue.pull_request.files:
         try:
-            files_to_commit = await get_desired_pull_request_file_content(desired_issue)
+            files_to_commit = await get_desired_pull_request_file_content(base_directory, desired_issue)
         except FileNotFoundError as exc:
             logger.error("File for PR not found or unreadable", file=file_path, error=str(exc))
             missing_files.append(file_path)
@@ -159,6 +160,7 @@ async def sync_github_pull_request(
     existing_issue: Issue,
     github_adapter: GitHubKitAdapter,
     default_branch: str,
+    base_directory: Path,
     existing_pull_request: PullRequest | None = None,
 ) -> None:
     """Synchronize a specific pull request for an issue."""
@@ -188,7 +190,7 @@ async def sync_github_pull_request(
             logger.info("Branch already exists, skipping creation", branch=desired_branch_name)
 
         # Commit files to branch
-        await commit_files_to_branch(desired_issue, existing_issue, desired_branch_name, github_adapter)
+        await commit_files_to_branch(desired_issue, existing_issue, desired_branch_name, base_directory, github_adapter)
 
         logger.info("Creating new PR for issue", branch=desired_branch_name, base_branch=default_branch)
         new_pr = await github_adapter.create_pull_request(
@@ -210,12 +212,12 @@ async def sync_github_pull_request(
             body=pr.body,
         )
         await github_adapter.set_labels_on_issue(existing_pull_request.number, pr_labels)
-        desired_file_data = await get_desired_pull_request_file_content(desired_issue)
+        desired_file_data = await get_desired_pull_request_file_content(base_directory, desired_issue)
         pr_file_sync_decision = await decide_github_pull_request_file_sync_action(desired_file_data, existing_pull_request, github_adapter)
         if pr_file_sync_decision == SyncDecision.CREATE:
             # The branch will already exist, so we don't need to create it.
             # However, we do need to commit the files to the branch.
-            await commit_files_to_branch(desired_issue, existing_issue, desired_branch_name, github_adapter)
+            await commit_files_to_branch(desired_issue, existing_issue, desired_branch_name, base_directory, github_adapter)
 
 
 async def sync_github_pull_requests(
@@ -224,6 +226,7 @@ async def sync_github_pull_requests(
     existing_pull_requests: list[PullRequest],
     github_adapter: GitHubKitAdapter,
     default_branch: str,
+    base_directory: Path,
 ) -> None:
     """Process pull requests for issues that specify a pull_request field."""
     desired_issues_with_prs = [issue for issue in desired_issues if issue.pull_request is not None]
@@ -236,4 +239,6 @@ async def sync_github_pull_requests(
         # Find existing PR associated with existing issue, if any.
         existing_pr = await get_pull_request_associated_with_issue(existing_issue, existing_pull_requests)
 
-        await sync_github_pull_request(desired_issue, existing_issue, github_adapter, default_branch, existing_pull_request=existing_pr)
+        await sync_github_pull_request(
+            desired_issue, existing_issue, github_adapter, default_branch, base_directory, existing_pull_request=existing_pr
+        )
