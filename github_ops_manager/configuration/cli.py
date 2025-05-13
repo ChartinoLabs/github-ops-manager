@@ -133,15 +133,16 @@ def fetch_files_cli(
     file_paths: Annotated[list[str], Argument(help="One or more file paths to fetch from the repository (relative to repo root).")],
     branch: Annotated[str | None, Option("--branch", help="Branch, tag, or commit SHA to fetch from. Defaults to the default branch.")] = None,
     debug: Annotated[bool, Option(envvar="DEBUG", help="Enable debug mode.")] = False,
-    github_api_url: Annotated[str, Option(envvar="GITHUB_API_URL", help="GitHub API URL.")] = "https://api.github.com",
-    github_pat_token: Annotated[str | None, Option(envvar="GITHUB_PAT_TOKEN", help="GitHub Personal Access Token.")] = None,
-    github_app_id: Annotated[int | None, Option(envvar="GITHUB_APP_ID", help="GitHub App ID.")] = None,
-    github_app_private_key_path: Annotated[Path | None, Option(envvar="GITHUB_APP_PRIVATE_KEY_PATH", help="Path to GitHub App private key.")] = None,
-    github_app_installation_id: Annotated[int | None, Option(envvar="GITHUB_APP_INSTALLATION_ID", help="GitHub App Installation ID.")] = None,
 ) -> None:
     """Fetch one or more files from the repository and download them locally at the same relative path."""
-    print(github_api_url)
     repo: str = ctx.obj["repo"]
+    github_api_url: str = ctx.obj["github_api_url"]
+    github_pat_token: str = ctx.obj["github_pat_token"]
+    github_app_id: int = ctx.obj["github_app_id"]
+    github_app_private_key_path: Path | None = ctx.obj["github_app_private_key_path"]
+    github_app_installation_id: int = ctx.obj["github_app_installation_id"]
+    github_auth_type = ctx.obj["github_auth_type"]
+    print(github_api_url)
     # Validate GitHub authentication configuration
     github_auth_type = asyncio.run(
         validate_github_authentication_configuration(
