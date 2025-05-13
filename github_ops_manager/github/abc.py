@@ -140,6 +140,6 @@ class GitHubClientBase(ABC):
         pass
 
     @abstractmethod
-    async def set_labels_on_issue(self, issue_number: int, labels: list[str]) -> Any:
+    async def set_labels_on_issue(self, issue_number: int, labels: list[str]) -> None:
         """Set labels on a specific issue (or pull request)."""
         pass

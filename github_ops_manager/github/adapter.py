@@ -250,22 +250,21 @@ class GitHubKitAdapter(GitHubClientBase):
         return response.parsed_data
 
     @handle_github_422
-    async def set_labels_on_issue(self, issue_number: int, labels: list[str]) -> Any:
+    async def set_labels_on_issue(self, issue_number: int, labels: list[str]) -> None:
         """Set labels on a specific issue (or pull request - GitHub considers them the same for label purposes)."""
         if labels:
-            response = await self.client.rest.issues.async_set_labels(
+            await self.client.rest.issues.async_set_labels(
                 owner=self.owner,
                 repo=self.repo_name,
                 issue_number=issue_number,
                 labels=labels,
             )
         else:
-            response = await self.client.rest.issues.async_remove_all_labels(
+            await self.client.rest.issues.async_remove_all_labels(
                 owner=self.owner,
                 repo=self.repo_name,
                 issue_number=issue_number,
             )
-        return response.parsed_data
 
     # Pull Request CRUD
     async def get_pull_request(self, pull_request_number: int) -> PullRequest:
