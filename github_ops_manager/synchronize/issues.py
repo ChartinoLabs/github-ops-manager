@@ -135,7 +135,7 @@ async def render_issue_bodies(issues_yaml_model: IssuesYAMLModel) -> IssuesYAMLM
     """
     logger.info("Rendering issue bodies using template", template_path=issues_yaml_model.issue_template)
     try:
-        template = await construct_jinja2_template(issues_yaml_model.issue_template)
+        template = construct_jinja2_template(issues_yaml_model.issue_template)
     except jinja2.TemplateSyntaxError as exc:
         logger.error("Encountered a syntax error with the provided issue template", issue_template=issues_yaml_model.issue_template, error=str(exc))
         raise
