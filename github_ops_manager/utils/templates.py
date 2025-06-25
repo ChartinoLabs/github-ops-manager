@@ -35,7 +35,7 @@ def construct_jinja2_template_from_file(template_path: Path | str, environment: 
     return environment.from_string(template_content)
 
 
-def render_template_from_file_with_model(model: BaseModel, template: jinja2.Template) -> str:
+def render_template_with_model(model: BaseModel, template: jinja2.Template) -> str:
     """Render a Jinja2 template against a Pydantic model."""
     try:
         rendered_template = template.render(model.model_dump())
