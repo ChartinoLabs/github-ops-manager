@@ -66,6 +66,9 @@ def process_issues_cli(
     yaml_path: Annotated[Path, Argument(envvar="YAML_PATH", help="Path to YAML file for issues.")],
     create_prs: Annotated[bool, Option(envvar="CREATE_PRS", help="Create PRs for issues.")] = False,
     debug: Annotated[bool, Option(envvar="DEBUG", help="Enable debug mode.")] = False,
+    testing_as_code_test_case_definitions: Annotated[
+        Path | None, Option(envvar="TESTING_AS_CODE_TEST_CASE_DEFINITIONS", help="Path to Testing as Code test case definitions.")
+    ] = None,
 ) -> None:
     """Processes issues in a GitHub repository."""
     repo: str = ctx.obj["repo"]
@@ -86,6 +89,7 @@ def process_issues_cli(
             github_auth_type=github_auth_type,
             github_api_url=github_api_url,
             yaml_path=yaml_path,
+            testing_as_code_test_case_definitions=testing_as_code_test_case_definitions,
         )
     )
     if result.errors:

@@ -7,6 +7,7 @@ from githubkit.versions.latest.models import Issue, PullRequest
 
 from github_ops_manager.github.adapter import GitHubKitAdapter
 from github_ops_manager.schemas.default_issue import IssueModel, PullRequestModel
+from github_ops_manager.schemas.tac import TestingAsCodeTestCaseDefinitions
 from github_ops_manager.synchronize.models import SyncDecision
 from github_ops_manager.synchronize.utils import compare_github_field, compare_label_sets
 from github_ops_manager.utils.helpers import generate_branch_name
@@ -162,6 +163,7 @@ async def sync_github_pull_request(
     default_branch: str,
     base_directory: Path,
     existing_pull_request: PullRequest | None = None,
+    testing_as_code_test_case_definitions: TestingAsCodeTestCaseDefinitions | None = None,
 ) -> None:
     """Synchronize a specific pull request for an issue."""
     # Ignoring type below because we know that the pull_request field is
@@ -177,7 +179,14 @@ async def sync_github_pull_request(
     # Ensure that pull request body has closing keywords. If it doesn't,
     # then we need to add them to the bottom of the body.
     if not await pull_request_has_closing_keywords(existing_issue.number, pr.body):
-        pr.body = f"{pr.body}\n\nCloses #{existing_issue.number}"
+        if testing_as_code_test_case_definitions is not None:
+            pr.body = (
+                f"**Quicksilver**: Automatically generated Pull Request for "
+                f"issue #{existing_issue.number}, {existing_issue.title}. "
+                f"Closes #{existing_issue.number}"
+            )
+        else:
+            pr.body = f"{pr.body}\n\nCloses #{existing_issue.number}"
 
     # Make overall PR sync decision
     pr_sync_decision = await decide_github_pull_request_sync_action(desired_issue, existing_pull_request=existing_pull_request)
@@ -227,6 +236,7 @@ async def sync_github_pull_requests(
     github_adapter: GitHubKitAdapter,
     default_branch: str,
     base_directory: Path,
+    testing_as_code_test_case_definitions: TestingAsCodeTestCaseDefinitions | None = None,
 ) -> None:
     """Process pull requests for issues that specify a pull_request field."""
     desired_issues_with_prs = [issue for issue in desired_issues if issue.pull_request is not None]
@@ -240,5 +250,11 @@ async def sync_github_pull_requests(
         existing_pr = await get_pull_request_associated_with_issue(existing_issue, existing_pull_requests)
 
         await sync_github_pull_request(
-            desired_issue, existing_issue, github_adapter, default_branch, base_directory, existing_pull_request=existing_pr
+            desired_issue,
+            existing_issue,
+            github_adapter,
+            default_branch,
+            base_directory,
+            existing_pull_request=existing_pr,
+            testing_as_code_test_case_definitions=testing_as_code_test_case_definitions,
         )
