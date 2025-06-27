@@ -48,7 +48,7 @@ docs = [
 "Bug Tracker" = "https://github.com/aitestino/github-ops-manager.git/issues"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/github_ops_manager"] # Placeholder as requested, assuming src layout
+packages = ["github_ops_manager"]
 
 [tool.uv]
 # uv-specific configuration (if any)
