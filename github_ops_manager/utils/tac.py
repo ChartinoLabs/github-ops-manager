@@ -6,7 +6,7 @@ from github_ops_manager.schemas.tac import TestingAsCodeTestCaseDefinition, Test
 def find_test_case_definition_with_file(test_case_definitions: TestingAsCodeTestCaseDefinitions, file: str) -> TestingAsCodeTestCaseDefinition | None:
     """Finds a test case definition that resulted in a specific created file."""
     for test_case_definition in test_case_definitions.test_cases:
-        if test_case_definition.resulting_filename == file:
+        if test_case_definition.generated_script_path == file:
             return test_case_definition
     return None
 

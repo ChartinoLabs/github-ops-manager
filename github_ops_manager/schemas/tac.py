@@ -26,7 +26,7 @@ class TestingAsCodeTestCaseDefinition(BaseModel):
     pass_criteria: str | None = None
     jobfile_parameters: str | None = None
     jobfile_parameters_mapping: str | None = None
-    resulting_filename: str | None = None
+    generated_script_path: str | None = None
 
 
 class TestingAsCodeTestCaseDefinitions(BaseModel):
