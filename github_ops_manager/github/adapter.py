@@ -14,6 +14,8 @@ from githubkit.versions.latest.models import (
     Label,
     PullRequest,
     PullRequestSimple,
+    Release,
+    Commit,
 )
 
 from github_ops_manager.configuration.models import GitHubAuthenticationType
@@ -464,3 +466,58 @@ class GitHubKitAdapter(GitHubClientBase):
             ref=branch,
         )
         return base64.b64decode(response.parsed_data.content).decode("utf-8")
+
+    # Release/Tag Operations
+    @handle_github_422
+    async def list_releases(self, per_page: int = 100, **kwargs: Any) -> list[Release]:
+        """List all releases for a repository, handling pagination."""
+        all_releases: list[Release] = []
+        page: int = 1
+        while True:
+            response: Response[list[Release]] = await self.client.rest.repos.async_list_releases(
+                owner=self.owner,
+                repo=self.repo_name,
+                per_page=per_page,
+                page=page,
+                **kwargs,
+            )
+            releases: list[Release] = response.parsed_data
+            if not releases:
+                break
+            all_releases.extend(releases)
+            if len(releases) < per_page:
+                break
+            page += 1
+        return all_releases
+
+    @handle_github_422
+    async def get_release(self, tag_name: str) -> Release:
+        """Get a specific release by tag name."""
+        response: Response[Release] = await self.client.rest.repos.async_get_release_by_tag(
+            owner=self.owner,
+            repo=self.repo_name,
+            tag=tag_name,
+        )
+        return response.parsed_data
+
+    @handle_github_422
+    async def get_latest_release(self) -> Release:
+        """Get the latest release for the repository."""
+        response: Response[Release] = await self.client.rest.repos.async_get_latest_release(
+            owner=self.owner,
+            repo=self.repo_name,
+        )
+        return response.parsed_data
+
+    # Commit Operations
+    @handle_github_422
+    async def get_commit(self, commit_sha: str) -> Commit:
+        """Get detailed information about a specific commit, including full message body.
+        
+        """
+        response: Response[Commit] = await self.client.rest.repos.async_get_commit(
+            owner=self.owner,
+            repo=self.repo_name,
+            ref=commit_sha,
+        )
+        return response.parsed_data

@@ -143,3 +143,25 @@ class GitHubClientBase(ABC):
     async def set_labels_on_issue(self, issue_number: int, labels: list[str]) -> None:
         """Set labels on a specific issue (or pull request)."""
         pass
+
+    # Release/Tag Operations
+    @abstractmethod
+    async def list_releases(self, per_page: int = 100, **kwargs: Any) -> list[Any]:
+        """List all releases for a repository."""
+        pass
+
+    @abstractmethod
+    async def get_release(self, tag_name: str) -> Any:
+        """Get a specific release by tag name."""
+        pass
+
+    @abstractmethod
+    async def get_latest_release(self) -> Any:
+        """Get the latest release for the repository."""
+        pass
+
+    # Commit Operations
+    @abstractmethod
+    async def get_commit(self, commit_sha: str) -> Any:
+        """Get detailed information about a specific commit, including full message body."""
+        pass
