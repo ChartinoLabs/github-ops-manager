@@ -11,7 +11,7 @@ from github_ops_manager.schemas.default_issue import IssueModel, IssuesYAMLModel
 from github_ops_manager.synchronize.models import SyncDecision
 from github_ops_manager.synchronize.results import AllIssueSynchronizationResults, IssueSynchronizationResult
 from github_ops_manager.synchronize.utils import compare_github_field, compare_label_sets
-from github_ops_manager.utils.templates import construct_jinja2_template
+from github_ops_manager.utils.templates import construct_jinja2_template_from_file
 
 logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)
 
@@ -135,7 +135,7 @@ async def render_issue_bodies(issues_yaml_model: IssuesYAMLModel) -> IssuesYAMLM
     """
     logger.info("Rendering issue bodies using template", template_path=issues_yaml_model.issue_template)
     try:
-        template = construct_jinja2_template(issues_yaml_model.issue_template)
+        template = construct_jinja2_template_from_file(issues_yaml_model.issue_template)
     except jinja2.TemplateSyntaxError as exc:
         logger.error("Encountered a syntax error with the provided issue template", issue_template=issues_yaml_model.issue_template, error=str(exc))
         raise
