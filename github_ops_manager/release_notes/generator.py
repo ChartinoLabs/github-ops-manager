@@ -3,6 +3,7 @@
 import uuid
 from typing import Optional, List
 import structlog
+from githubkit.versions.latest.models import Commit
 
 from ..github.adapter import GitHubKitAdapter
 from ..configuration.models import GitHubAuthenticationType
@@ -87,7 +88,14 @@ class ReleaseNotesGenerator:
             
             # Get all releases
             all_releases = await self.adapter.list_releases()
-            release_versions = [r.tag_name.lstrip('v') for r in all_releases if not r.draft and not r.prerelease]
+            logger.debug(f"Total releases from API: {len(all_releases)}")
+            
+            # Filter out drafts and prereleases
+            filtered_releases = [r for r in all_releases if not r.draft and not r.prerelease]
+            logger.debug(f"Releases after filtering (no drafts/prereleases): {len(filtered_releases)}")
+            
+            release_versions = [r.tag_name.lstrip('v') for r in filtered_releases]
+            logger.debug(f"Release versions for processing: {release_versions}")
             
             # Get current content from default branch
             repo_info = await self.adapter.get_repository()
@@ -116,13 +124,22 @@ class ReleaseNotesGenerator:
                 # Extract data for this specific release
                 release_data = await extractor.extract_release_data(specific_release=version)
                 
-                # Extract PR data
-                pr_data = await extractor.extract_pr_data(release_data.body)
+                # Extract PR and commit data
+                pr_data, standalone_commits = await extractor.extract_pr_and_commit_data(
+                    release_data.body
+                )
                 
-                if not pr_data:
-                    logger.warning("No PRs found in release", version=version)
+                # Check if we found any content
+                if not pr_data and not standalone_commits:
+                    logger.warning("No PRs or commits found in release", version=version)
                     # Continue with other releases instead of failing
                     continue
+                
+                # Log what we found
+                if pr_data:
+                    logger.info(f"Found {len(pr_data)} PRs in release")
+                if standalone_commits:
+                    logger.info(f"Found {len(standalone_commits)} standalone commits in release")
                 
                 # Generate content using pluggable generator
                 logger.info("Generating content", version=version, generator=type(self.content_generator).__name__)
@@ -130,7 +147,8 @@ class ReleaseNotesGenerator:
                     release=release_data,
                     pr_data=pr_data,
                     current_content=current_content,
-                    file_config=self.file_config
+                    file_config=self.file_config,
+                    standalone_commits=standalone_commits
                 )
                 
                 all_generated_content.append((version, generated_content))
@@ -144,14 +162,20 @@ class ReleaseNotesGenerator:
             
             if not all_generated_content:
                 return ReleaseNotesResult(
-                    status=ReleaseNotesStatus.NO_PRS,
-                    error="No PRs found in any undocumented releases"
+                    status=ReleaseNotesStatus.NO_CONTENT,
+                    error="No PRs or commits found in any undocumented releases"
                 )
             
             if dry_run:
                 logger.info("Dry run mode - not creating PR")
                 # Combine all generated content for preview
                 combined_content = "\n\n".join([content for _, content in all_generated_content])
+                
+                logger.debug("="*80)
+                logger.debug("DRY RUN - FINAL RELEASE NOTES FILE WOULD CONTAIN:\n")
+                logger.debug(current_content)
+                logger.debug("="*80)
+                
                 return ReleaseNotesResult(
                     status=ReleaseNotesStatus.DRY_RUN,
                     version=", ".join([v for v, _ in all_generated_content]),
