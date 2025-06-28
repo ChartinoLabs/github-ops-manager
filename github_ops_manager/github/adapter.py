@@ -78,13 +78,29 @@ class GitHubKitAdapter(GitHubClientBase):
         cls,
         repo: str,
         github_auth_type: GitHubAuthenticationType,
-        github_pat_token: str | None,
-        github_app_id: int | None,
-        github_app_private_key_path: Path | None,
-        github_app_installation_id: int | None,
-        github_api_url: str,
+        github_pat_token: str | None = None,
+        github_app_id: int | None = None,
+        github_app_private_key_path: Path | None = None,
+        github_app_installation_id: int | None = None,
+        github_api_url: str = "https://api.github.com",
     ) -> Self:
-        """Create a new GitHub client adapter."""
+        """Create a new GitHub client adapter.
+        
+        Args:
+            repo: Repository in 'owner/repo' format
+            github_auth_type: Type of authentication (PAT or APP)
+            github_pat_token: Personal access token (required for PAT auth)
+            github_app_id: GitHub App ID (required for APP auth)
+            github_app_private_key_path: Path to private key file (required for APP auth)
+            github_app_installation_id: Installation ID (required for APP auth)
+            github_api_url: GitHub API URL (defaults to https://api.github.com)
+            
+        Returns:
+            Configured GitHubKitAdapter instance
+            
+        Raises:
+            ValueError: If required parameters for the chosen auth type are missing
+        """
         owner, repo_name = await split_repository_in_configuration(repo=repo)
         logger.info(
             "Creating client for GitHub instance and repository",
