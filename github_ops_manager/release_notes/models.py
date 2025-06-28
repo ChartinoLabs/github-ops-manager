@@ -5,6 +5,7 @@ from typing import List, Dict, Any, Protocol
 from pydantic import BaseModel, Field
 from enum import Enum
 from githubkit.versions.latest.models import Release, PullRequest, Commit
+from dataclasses import dataclass
 
 from ..utils.constants import (
     DEFAULT_RELEASE_NOTES_PATH,
@@ -22,34 +23,20 @@ class ReleaseNotesStatus(str, Enum):
     NO_CONTENT = "no_content"
     
     
-class ReleaseNotesFileConfig(BaseModel):
-    """Configuration specific to release notes file handling."""
-    
-    # File settings
-    release_notes_path: str = Field(
-        default=DEFAULT_RELEASE_NOTES_PATH,
-        description="Path to release notes file in repo"
-    )
-    release_notes_header: str = Field(
-        default=DEFAULT_RELEASE_NOTES_HEADER,
-        description="Expected header in release notes file"
-    )
-    
-    # Behavior settings
-    version_pattern: str = Field(
-        default=VERSION_HEADER_PATTERN,
-        description="Regex pattern to match version headers"
-    )
+@dataclass
+class ReleaseNotesFileConfig:
+    """Configuration for release notes file management."""
+    file_path: str = "RELEASE_NOTES.md"
+    branch_name_prefix: str = "auto-release-notes"
+    commit_message_template: str = "chore: Add release notes for version {version}"
+    pr_title_template: str = "chore: Add release notes for version {version}"
+    pr_body_template: str = "This PR adds release notes for version {version}.\n\nGenerated automatically."
     
     
-class PRWithCommits(BaseModel):
-    """Wrapper for a pull request with its associated commits.
-    
-    This combines the GitHub API PullRequest object with the list of commits
-    for easier processing by the content generator.
-    """
+class PRWithCommits:
+    """Pull request with its associated commits."""
     pull_request: PullRequest
-    commits: List[Commit]
+    commits: List[Dict[str, Any]]  # Raw commit data from GitHub API
     
     
 class ReleaseNotesResult(BaseModel):
@@ -62,30 +49,24 @@ class ReleaseNotesResult(BaseModel):
     
     
 class ContentGenerator(Protocol):
-    """Protocol for pluggable content generation.
+    """Protocol for release notes content generators."""
     
-    Implementations can use AI, templates, or any other method
-    to generate release notes content from the provided data.
-    """
-    
-    async def generate_content(
-        self,
-        release: Release,
-        pr_data: List[PRWithCommits],
-        current_content: str,
-        file_config: ReleaseNotesFileConfig,
-        standalone_commits: List[Commit] = None
+    async def generate(
+        self, 
+        version: str,
+        prs: List[PRWithCommits],
+        commits: List[Dict[str, Any]],
+        release: Release
     ) -> str:
         """Generate release notes content.
         
         Args:
-            release: GitHub Release object from the API
-            pr_data: List of PRs with their commits
-            current_content: Current release notes file content
-            file_config: Configuration for file handling
-            standalone_commits: List of commits not associated with PRs
+            version: The version being documented
+            prs: List of PRs with their commits
+            commits: List of standalone commits (raw dicts from GitHub API)
+            release: The GitHub release object
             
         Returns:
-            Generated markdown content for the new release
+            Generated release notes content as markdown
         """
         ... 

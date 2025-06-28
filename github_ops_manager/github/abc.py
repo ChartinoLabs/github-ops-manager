@@ -162,6 +162,6 @@ class GitHubClientBase(ABC):
 
     # Commit Operations
     @abstractmethod
-    async def get_commit(self, commit_sha: str) -> Any:
+    async def get_commit(self, commit_sha: str) -> dict[str, Any]:
         """Get detailed information about a specific commit, including full message body."""
         pass

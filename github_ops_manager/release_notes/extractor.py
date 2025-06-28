@@ -1,9 +1,9 @@
 """Extract PR and commit data from releases."""
 
 import re
-from typing import List, Tuple, Optional
+from typing import List, Tuple, Optional, Dict, Any
 import structlog
-from githubkit.versions.latest.models import Release, PullRequest, Commit
+from githubkit.versions.latest.models import Release, PullRequest
 
 from ..github.adapter import GitHubKitAdapter
 from .models import PRWithCommits
@@ -133,14 +133,14 @@ class DataExtractor:
         logger.debug(f"Found {len(unique_shas)} commit SHAs in release body")
         return unique_shas
     
-    async def extract_commit_data_from_shas(self, shas: List[str]) -> List[Commit]:
+    async def extract_commit_data_from_shas(self, shas: List[str]) -> List[Dict[str, Any]]:
         """Fetch full commit data for a list of SHAs.
         
         Args:
             shas: List of commit SHAs (short or full)
             
         Returns:
-            List of Commit objects with full commit messages
+            List of commit dictionaries with full commit messages
         """
         commit_data = []
         
@@ -153,8 +153,8 @@ class DataExtractor:
                 logger.debug(
                     "Fetched commit details",
                     sha=sha,
-                    author=detailed.commit.author.name,
-                    message_lines=len(detailed.commit.message.split('\n'))
+                    author=detailed.get('commit', {}).get('author', {}).get('name', 'Unknown'),
+                    message_lines=len(detailed.get('commit', {}).get('message', '').split('\n'))
                 )
                 
             except Exception as e:
@@ -166,7 +166,7 @@ class DataExtractor:
                 
         return commit_data
     
-    async def extract_pr_and_commit_data(self, release_body: str) -> Tuple[List[PRWithCommits], List[Commit]]:
+    async def extract_pr_and_commit_data(self, release_body: str) -> Tuple[List[PRWithCommits], List[Dict[str, Any]]]:
         """Extract both PR data and standalone commit data from release body.
         
         This method will:
@@ -190,8 +190,10 @@ class DataExtractor:
         pr_commit_shas = set()
         for pr in pr_data:
             for commit in pr.commits:
-                pr_commit_shas.add(commit.sha[:7])  # Use short SHA for comparison
-                pr_commit_shas.add(commit.sha)      # Also add full SHA
+                # Handle both dict and object formats
+                sha = commit.get('sha') if isinstance(commit, dict) else commit.sha
+                pr_commit_shas.add(sha[:7])  # Use short SHA for comparison
+                pr_commit_shas.add(sha)      # Also add full SHA
                 
         # Filter out commits that are already part of PRs
         standalone_shas = [
