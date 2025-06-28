@@ -1,6 +1,18 @@
 """Contains utility functions for interacting with Testing as Code constructs."""
 
+from github_ops_manager.schemas.default_issue import IssueModel, IssuesYAMLModel
 from github_ops_manager.schemas.tac import TestingAsCodeTestCaseDefinition, TestingAsCodeTestCaseDefinitions
+
+
+def find_issue_with_title(issues_yaml_model: IssuesYAMLModel, title: str) -> IssueModel | None:
+    """Finds an issue with a specific title."""
+    if not title:
+        raise ValueError("Provided title is an empty string")
+
+    for issue in issues_yaml_model.issues:
+        if issue.title == title:
+            return issue
+    return None
 
 
 def find_test_case_definition_with_file(test_case_definitions: TestingAsCodeTestCaseDefinitions, file: str) -> TestingAsCodeTestCaseDefinition | None:
