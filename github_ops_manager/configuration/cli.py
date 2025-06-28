@@ -17,7 +17,10 @@ from github_ops_manager.configuration.reconcile import validate_github_authentic
 from github_ops_manager.github.adapter import GitHubKitAdapter
 from github_ops_manager.processing.yaml_processor import YAMLProcessor
 from github_ops_manager.schemas.default_issue import IssueModel, IssuesYAMLModel, PullRequestModel
+from github_ops_manager.schemas.tac import TestingAsCodeTestCaseDefinitions
 from github_ops_manager.synchronize.driver import run_process_issues_workflow
+from github_ops_manager.utils.tac import find_issue_with_title
+from github_ops_manager.utils.templates import construct_jinja2_template_from_file, render_template_with_model
 
 load_dotenv()
 
@@ -57,6 +60,112 @@ def repo_callback(
 
 
 repo_app.callback()(repo_callback)
+
+
+# Command(s) that are specific to the Testing as Code methodology
+@repo_app.command(name="tac-sync-issues")
+def tac_sync_issues_cli(
+    ctx: typer.Context,
+    yaml_path: Annotated[Path, Argument(envvar="YAML_PATH", help="Path to YAML file for issues.")],
+    testing_as_code_test_case_definitions: Annotated[
+        Path, Argument(envvar="TESTING_AS_CODE_TEST_CASE_DEFINITIONS", help="Path to Testing as Code test case definitions.")
+    ],
+) -> None:
+    """Sync issues in a GitHub repository using the Testing as Code methodology."""
+    # Load TAC test case definition data model can be loaded from file and
+    # is syntactically correct.
+    if not testing_as_code_test_case_definitions.exists():
+        error = f"Testing as Code test case definitions file not found: {testing_as_code_test_case_definitions.absolute()}"
+        typer.echo(error, err=True)
+        raise FileNotFoundError(error)
+    typer.echo(f"Loading Testing as Code test case definitions from {testing_as_code_test_case_definitions.absolute()}")
+    testing_as_code_test_case_definitions_content = testing_as_code_test_case_definitions.read_text()
+    testing_as_code_test_case_definitions_model = TestingAsCodeTestCaseDefinitions.model_validate_json(testing_as_code_test_case_definitions_content)
+    typer.echo(f"Loaded {len(testing_as_code_test_case_definitions_model.test_cases)} test case definitions")
+
+    # Load the YAML file and validate it.
+    if not yaml_path.exists():
+        error = f"YAML file not found: {yaml_path.absolute()}"
+        typer.echo(error, err=True)
+        raise FileNotFoundError(error)
+    typer.echo(f"Loading issues from {yaml_path.absolute()}")
+    desired_issues_yaml_content = yaml_path.read_text()
+    desired_issues_yaml_model = IssuesYAMLModel.model_validate_json(desired_issues_yaml_content)
+    typer.echo(f"Loaded {len(desired_issues_yaml_model.issues)} issues")
+
+    # Ensure that the issue body Jinja2 template for Testing as Code issues
+    # can be constructed.
+    template = construct_jinja2_template_from_file(Path("github_ops_manager/templates/tac_issues_body.j2"))
+
+    # Iterate through the test case definitions and ensure matching issues
+    # exist in the YAML file.
+    for test_case_definition in testing_as_code_test_case_definitions_model.test_cases:
+        typer.echo(f"Processing test case definition with a title of '{test_case_definition.title}'")
+        existing_issue = find_issue_with_title(desired_issues_yaml_model, test_case_definition.title)
+        if existing_issue is None:
+            typer.echo(f"No existing issue found for test case definition with a title of '{test_case_definition.title}' - adding one now")
+            # Create a new issue based upon the test case definition. The test
+            # case definition could be in one of two states that our issue
+            # creation logic needs to handle:
+            #
+            # 1. The test case definition has not yet resulted in a new test
+            #    automation script (which means no Pull Request is needed).
+            # 2. The test case definition has already been reviewed and has
+            #    resulted in the creation of a new test automation script
+            #    (which means a Pull Request is needed).
+            #
+            # The way we differentiate between the two states is through the
+            # control labels associated with the test case definition. A test
+            # case definition that has resulted in a created test automation
+            # script will have a control label called "script-already-created".
+            # Additionally, a field named "generated_script_path" will be
+            # populated with the path to the created test automation script.
+            new_issue = IssueModel(
+                title=test_case_definition.title,
+                body=render_template_with_model(
+                    model=test_case_definition,
+                    template=template,
+                ),
+                labels=test_case_definition.labels,
+            )
+            # Check if we need to create a Pull Request for this issue.
+            if test_case_definition.generated_script_path is not None:
+                typer.echo(
+                    "Test case definition with a title of "
+                    f"'{test_case_definition.title}' has a generated script "
+                    f"path of '{test_case_definition.generated_script_path}' - "
+                    "creating a Pull Request"
+                )
+                new_issue.pull_request = PullRequestModel(
+                    title=f"GenAI, Review: {test_case_definition.title}",
+                    files=[test_case_definition.generated_script_path],
+                )
+            desired_issues_yaml_model.issues.append(new_issue)
+        else:
+            # Update the existing issue based upon the test case definition.
+            existing_issue.body = render_template_with_model(
+                model=test_case_definition,
+                template=template,
+            )
+            existing_issue.labels = test_case_definition.labels
+            if test_case_definition.generated_script_path is not None:
+                existing_issue.pull_request = PullRequestModel(
+                    title=f"GenAI, Review: {test_case_definition.title}",
+                    files=[test_case_definition.generated_script_path],
+                )
+            else:
+                existing_issue.pull_request = None
+
+    typer.echo(f"Updated desired issues YAML model to have a total of {len(desired_issues_yaml_model.issues)} issues")
+
+    # Write the updated YAML file to disk.
+    yaml = YAML()
+    yaml.default_flow_style = False
+    yaml.explicit_start = True
+    yaml.indent(mapping=2, sequence=4, offset=2)
+    with open(yaml_path, "w", encoding="utf-8") as f:
+        yaml.dump(desired_issues_yaml_model.model_dump(mode="python", exclude_none=True, exclude_defaults=True), f)
+    typer.echo(f"Successfully updated issues YAML model and saved to {yaml_path}")
 
 
 # --- Move process-issues under repo_app ---
