@@ -548,13 +548,60 @@ class GitHubKitAdapter(GitHubClientBase):
 
     # Commit Operations
     @handle_github_422
-    async def get_commit(self, commit_sha: str) -> Commit:
-        """Get detailed information about a specific commit, including full message body.
+    async def get_commit(self, commit_sha: str) -> dict[str, Any]:
+        """Get a commit by SHA.
         
+        Returns the raw commit data as a dictionary instead of a Commit model
+        due to githubkit's Pydantic model not matching GitHub's API response
+        for the verification field.
+        
+        Args:
+            commit_sha: The commit SHA (can be abbreviated)
+            
+        Returns:
+            Dictionary containing the raw commit data from GitHub API
         """
-        response: Response[Commit] = await self.client.rest.repos.async_get_commit(
+        # IMPORTANT: githubkit Bug Workaround (as of v0.12.14)
+        # 
+        # We return raw dict instead of parsed Commit model due to a Pydantic validation error
+        # in githubkit's model definition. The issue occurs because:
+        #
+        # 1. GitHub's API returns this structure for commit verification:
+        #    {
+        #      "verified": false,
+        #      "reason": "unsigned", 
+        #      "signature": null,
+        #      "payload": null
+        #    }
+        #
+        # 2. But githubkit's Commit model expects either:
+        #    - The literal string "<UNSET>" (not a dict)
+        #    - OR a Verification object with a required "verified_at" field
+        #
+        # 3. GitHub's API doesn't include "verified_at", causing validation to fail with:
+        #    "commit.verification.Verification.verified_at Field required"
+        #
+        # This bug only surfaces when fetching full commit details (this endpoint), not when
+        # getting commits through other endpoints like PR listings, because:
+        # - Simple commit objects from PR listings don't include the verification field
+        # - Only the full commit details endpoint (/repos/{owner}/{repo}/commits/{ref}) 
+        #   returns the problematic verification structure
+        #
+        # Our release notes feature needs full commit messages (including extended body text),
+        # which is why we must use this endpoint and encountered this issue.
+        #
+        # Alternative approaches considered and rejected:
+        # - Catching ValidationError: Would hide real problems and create silent failures
+        # - Downgrading githubkit: Could introduce other compatibility issues
+        # - Using a different GitHub library: Too much refactoring for a single issue
+        #
+        # When githubkit fixes their model, we can revert to returning typed Commit objects
+        # by simply changing this to: return response.parsed_data
+        
+        response = await self.client.rest.repos.async_get_commit(
             owner=self.owner,
             repo=self.repo_name,
-            ref=commit_sha,
+            ref=commit_sha
         )
-        return response.parsed_data
+        # Return raw JSON response instead of parsed_data due to githubkit bug
+        return response.json()
