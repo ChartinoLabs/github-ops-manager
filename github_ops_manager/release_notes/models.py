@@ -6,6 +6,12 @@ from pydantic import BaseModel, Field
 from enum import Enum
 from githubkit.versions.latest.models import Release, PullRequest, Commit
 
+from ..utils.constants import (
+    DEFAULT_RELEASE_NOTES_PATH,
+    DEFAULT_RELEASE_NOTES_HEADER,
+    VERSION_HEADER_PATTERN,
+)
+
 
 class ReleaseNotesStatus(str, Enum):
     """Status of release notes generation."""
@@ -13,7 +19,7 @@ class ReleaseNotesStatus(str, Enum):
     SUCCESS = "success"
     ERROR = "error"
     DRY_RUN = "dry_run"
-    NO_PRS = "no_prs"
+    NO_CONTENT = "no_content"
     
     
 class ReleaseNotesFileConfig(BaseModel):
@@ -21,17 +27,17 @@ class ReleaseNotesFileConfig(BaseModel):
     
     # File settings
     release_notes_path: str = Field(
-        default="docs/release-notes.md",
+        default=DEFAULT_RELEASE_NOTES_PATH,
         description="Path to release notes file in repo"
     )
     release_notes_header: str = Field(
-        default="# Release Notes\n\nThis document tracks the new features, enhancements, and bug fixes for each release.",
+        default=DEFAULT_RELEASE_NOTES_HEADER,
         description="Expected header in release notes file"
     )
     
     # Behavior settings
     version_pattern: str = Field(
-        default=r'^##\s+v?(\d+\.\d+\.\d+)\s*$',
+        default=VERSION_HEADER_PATTERN,
         description="Regex pattern to match version headers"
     )
     
@@ -67,7 +73,8 @@ class ContentGenerator(Protocol):
         release: Release,
         pr_data: List[PRWithCommits],
         current_content: str,
-        file_config: ReleaseNotesFileConfig
+        file_config: ReleaseNotesFileConfig,
+        standalone_commits: List[Commit] = None
     ) -> str:
         """Generate release notes content.
         
@@ -76,6 +83,7 @@ class ContentGenerator(Protocol):
             pr_data: List of PRs with their commits
             current_content: Current release notes file content
             file_config: Configuration for file handling
+            standalone_commits: List of commits not associated with PRs
             
         Returns:
             Generated markdown content for the new release

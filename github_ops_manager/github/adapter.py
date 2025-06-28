@@ -487,9 +487,11 @@ class GitHubKitAdapter(GitHubClientBase):
     @handle_github_422
     async def list_releases(self, per_page: int = 100, **kwargs: Any) -> list[Release]:
         """List all releases for a repository, handling pagination."""
+        logger.debug("Fetching releases", owner=self.owner, repo=self.repo_name, per_page=per_page)
         all_releases: list[Release] = []
         page: int = 1
         while True:
+            logger.debug(f"Fetching releases page {page}")
             response: Response[list[Release]] = await self.client.rest.repos.async_list_releases(
                 owner=self.owner,
                 repo=self.repo_name,
@@ -498,12 +500,31 @@ class GitHubKitAdapter(GitHubClientBase):
                 **kwargs,
             )
             releases: list[Release] = response.parsed_data
+            logger.debug(f"Got {len(releases)} releases on page {page}")
+            
+            for release in releases:
+                # Format dates as ISO strings for human readability
+                created_at_str = release.created_at.isoformat() if release.created_at else "N/A"
+                published_at_str = release.published_at.isoformat() if release.published_at else "N/A"
+                
+                logger.debug(
+                    "Release found",
+                    tag_name=release.tag_name,
+                    name=release.name,
+                    draft=release.draft,
+                    prerelease=release.prerelease,
+                    created_at=created_at_str,
+                    published_at=published_at_str,
+                )
+            
             if not releases:
                 break
             all_releases.extend(releases)
             if len(releases) < per_page:
                 break
             page += 1
+        
+        logger.info(f"Total releases found: {len(all_releases)}")
         return all_releases
 
     @handle_github_422

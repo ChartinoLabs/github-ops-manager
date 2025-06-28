@@ -36,7 +36,8 @@ async def get_github_app_client(
             app_id=github_app_id,
             private_key=private_key,
         )
-        app_client = GitHub(auth=auth, base_url=github_api_url)
+        # Disable HTTP caching to always get fresh data
+        app_client = GitHub(auth=auth, base_url=github_api_url, http_cache=False)
 
         owner, repository = await split_repository_in_configuration(repo=repo)
 
@@ -55,7 +56,12 @@ async def get_github_pat_client(github_pat_token: str, github_api_url: str) -> G
     """Returns an authenticated GitHub client using GitHub PAT credentials."""
     if not github_pat_token:
         raise RuntimeError("GitHub PAT authentication requires github_pat_token in config.")
-    return GitHub(auth=TokenAuthStrategy(github_pat_token), base_url=github_api_url)
+    # Disable HTTP caching to always get fresh data
+    return GitHub(
+        auth=TokenAuthStrategy(github_pat_token), 
+        base_url=github_api_url,
+        http_cache=False
+    )
 
 
 async def get_github_client(
