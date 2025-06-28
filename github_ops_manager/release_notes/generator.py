@@ -14,6 +14,10 @@ from .models import (
     ContentGenerator,
     PRWithCommits,
 )
+from ..utils.constants import (
+    VERSION_HEADER_PATTERN,
+    DEFAULT_RELEASE_NOTES_HEADER,
+)
 from .detector import VersionDetector
 from .extractor import DataExtractor
 from .markdown import MarkdownWriter
@@ -82,9 +86,9 @@ class ReleaseNotesGenerator:
                 await self.initialize()
                 
             # Initialize components
-            detector = VersionDetector(self.file_config.version_pattern)
+            detector = VersionDetector(VERSION_HEADER_PATTERN)
             extractor = DataExtractor(self.adapter)
-            writer = MarkdownWriter(self.file_config.release_notes_header)
+            writer = MarkdownWriter(DEFAULT_RELEASE_NOTES_HEADER)
             
             # Get all releases
             all_releases = await self.adapter.list_releases()
@@ -100,7 +104,7 @@ class ReleaseNotesGenerator:
             # Get current content from default branch
             repo_info = await self.adapter.get_repository()
             current_content = await self.adapter.get_file_content_from_pull_request(
-                self.file_config.release_notes_path,
+                self.file_config.file_path,
                 repo_info.default_branch
             )
             
@@ -143,12 +147,11 @@ class ReleaseNotesGenerator:
                 
                 # Generate content using pluggable generator
                 logger.info("Generating content", version=version, generator=type(self.content_generator).__name__)
-                generated_content = await self.content_generator.generate_content(
-                    release=release_data,
-                    pr_data=pr_data,
-                    current_content=current_content,
-                    file_config=self.file_config,
-                    standalone_commits=standalone_commits
+                generated_content = await self.content_generator.generate(
+                    version=version,
+                    prs=pr_data,
+                    commits=standalone_commits,
+                    release=release_data
                 )
                 
                 all_generated_content.append((version, generated_content))
@@ -199,7 +202,7 @@ class ReleaseNotesGenerator:
             commit_message = f"docs: Update release notes for v{versions_str}"
             await self.adapter.commit_files_to_branch(
                 branch_name,
-                [(self.file_config.release_notes_path, current_content)],
+                [(self.file_config.file_path, current_content)],
                 commit_message
             )
             

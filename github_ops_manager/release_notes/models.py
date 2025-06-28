@@ -33,6 +33,7 @@ class ReleaseNotesFileConfig:
     pr_body_template: str = "This PR adds release notes for version {version}.\n\nGenerated automatically."
     
     
+@dataclass  
 class PRWithCommits:
     """Pull request with its associated commits."""
     pull_request: PullRequest
