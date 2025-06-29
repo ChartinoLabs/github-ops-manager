@@ -1,3 +1,7 @@
+{% if purpose is defined %}
+**Purpose**: {{ purpose }}
+
+{% endif %}
 {% for command_data in commands %}
 Sample output of `{{ command_data.command }}`:
 
