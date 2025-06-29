@@ -69,23 +69,28 @@ class DataExtractor:
                 pr = await self.adapter.get_pull_request(int(pr_number))
                 
                 # Fetch commits for this PR using githubkit's async_list_commits
+                # NOTE: We use .json() instead of .parsed_data to avoid githubkit's
+                # Commit model validation error with the verification field.
+                # See adapter.get_commit() for detailed explanation of this bug.
+                # PR opened here https://github.com/yanyongyu/githubkit/pull/229
                 commits_response = await self.adapter.client.rest.pulls.async_list_commits(
                     owner=self.adapter.owner,
                     repo=self.adapter.repo_name,
                     pull_number=int(pr_number)
                 )
-                commits = commits_response.parsed_data
+                commits = commits_response.json()  # Use raw JSON to avoid validation error
                 
                 # Fetch detailed commit info INCLUDING FULL MESSAGE BODY
                 detailed_commits = []
                 for commit in commits:
                     try:
-                        detailed = await self.adapter.get_commit(commit.sha)
+                        commit_sha = commit['sha'] if isinstance(commit, dict) else commit.sha
+                        detailed = await self.adapter.get_commit(commit_sha)
                         detailed_commits.append(detailed)
                     except Exception as e:
                         logger.warning(
                             "Failed to fetch commit details",
-                            sha=commit.sha,
+                            sha=commit.get('sha', 'unknown') if isinstance(commit, dict) else commit.sha,
                             error=str(e)
                         )
                         
