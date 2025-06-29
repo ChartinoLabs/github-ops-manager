@@ -26,44 +26,9 @@ load_dotenv()
 
 typer_app = typer.Typer(pretty_exceptions_show_locals=False)
 
-# --- Add a new Typer group for repo commands ---
-repo_app = typer.Typer(help="Repository-related commands")
-
-
-def repo_callback(
-    ctx: typer.Context,
-    repo: Annotated[str, Argument(help="Repository name (owner/repo).")],
-    github_api_url: Annotated[str, Option(envvar="GITHUB_API_URL", help="GitHub API URL.")] = "https://api.github.com",
-    github_pat_token: Annotated[str | None, Option(envvar="GITHUB_PAT_TOKEN", help="GitHub Personal Access Token.")] = None,
-    github_app_id: Annotated[int | None, Option(envvar="GITHUB_APP_ID", help="GitHub App ID.")] = None,
-    github_app_private_key_path: Annotated[Path | None, Option(envvar="GITHUB_APP_PRIVATE_KEY_PATH", help="Path to GitHub App private key.")] = None,
-    github_app_installation_id: Annotated[int | None, Option(envvar="GITHUB_APP_INSTALLATION_ID", help="GitHub App Installation ID.")] = None,
-) -> None:
-    """Set the repository for the current context."""
-    ctx.ensure_object(dict)
-    ctx.obj["repo"] = repo
-    ctx.obj["github_api_url"] = github_api_url
-    ctx.obj["github_pat_token"] = github_pat_token
-    ctx.obj["github_app_id"] = github_app_id
-    ctx.obj["github_app_private_key_path"] = github_app_private_key_path
-    ctx.obj["github_app_installation_id"] = github_app_installation_id
-    # Validate GitHub authentication configuration
-    github_auth_type = asyncio.run(
-        validate_github_authentication_configuration(
-            github_pat_token=github_pat_token,
-            github_app_id=github_app_id,
-            github_app_private_key_path=github_app_private_key_path,
-            github_app_installation_id=github_app_installation_id,
-        )
-    )
-    ctx.obj["github_auth_type"] = github_auth_type
-
-
-repo_app.callback()(repo_callback)
-
 
 # Command(s) that are specific to the Testing as Code methodology
-@repo_app.command(name="tac-sync-issues")
+@typer_app.command(name="tac-sync-issues")
 def tac_sync_issues_cli(
     ctx: typer.Context,
     yaml_path: Annotated[Path, Argument(envvar="YAML_PATH", help="Path to YAML file for issues.")],
@@ -166,6 +131,42 @@ def tac_sync_issues_cli(
     with open(yaml_path, "w", encoding="utf-8") as f:
         yaml.dump(desired_issues_yaml_model.model_dump(mode="python", exclude_none=True, exclude_defaults=True), f)
     typer.echo(f"Successfully updated issues YAML model and saved to {yaml_path}")
+
+
+# --- Add a new Typer group for repo commands ---
+repo_app = typer.Typer(help="Repository-related commands")
+
+
+def repo_callback(
+    ctx: typer.Context,
+    repo: Annotated[str, Argument(help="Repository name (owner/repo).")],
+    github_api_url: Annotated[str, Option(envvar="GITHUB_API_URL", help="GitHub API URL.")] = "https://api.github.com",
+    github_pat_token: Annotated[str | None, Option(envvar="GITHUB_PAT_TOKEN", help="GitHub Personal Access Token.")] = None,
+    github_app_id: Annotated[int | None, Option(envvar="GITHUB_APP_ID", help="GitHub App ID.")] = None,
+    github_app_private_key_path: Annotated[Path | None, Option(envvar="GITHUB_APP_PRIVATE_KEY_PATH", help="Path to GitHub App private key.")] = None,
+    github_app_installation_id: Annotated[int | None, Option(envvar="GITHUB_APP_INSTALLATION_ID", help="GitHub App Installation ID.")] = None,
+) -> None:
+    """Set the repository for the current context."""
+    ctx.ensure_object(dict)
+    ctx.obj["repo"] = repo
+    ctx.obj["github_api_url"] = github_api_url
+    ctx.obj["github_pat_token"] = github_pat_token
+    ctx.obj["github_app_id"] = github_app_id
+    ctx.obj["github_app_private_key_path"] = github_app_private_key_path
+    ctx.obj["github_app_installation_id"] = github_app_installation_id
+    # Validate GitHub authentication configuration
+    github_auth_type = asyncio.run(
+        validate_github_authentication_configuration(
+            github_pat_token=github_pat_token,
+            github_app_id=github_app_id,
+            github_app_private_key_path=github_app_private_key_path,
+            github_app_installation_id=github_app_installation_id,
+        )
+    )
+    ctx.obj["github_auth_type"] = github_auth_type
+
+
+repo_app.callback()(repo_callback)
 
 
 # --- Move process-issues under repo_app ---
