@@ -36,6 +36,9 @@ def tac_sync_issues_cli(
     testing_as_code_test_case_definitions: Annotated[
         Path, Argument(envvar="TESTING_AS_CODE_TEST_CASE_DEFINITIONS", help="Path to Testing as Code test case definitions.")
     ],
+    test_automation_scripts_directory: Annotated[
+        Path, Argument(envvar="TEST_AUTOMATION_SCRIPTS_DIRECTORY", help="Path to directory containing test automation scripts.")
+    ],
 ) -> None:
     """Sync issues in a GitHub repository using the Testing as Code methodology."""
     # Load TAC test case definition data model can be loaded from file and
@@ -115,9 +118,26 @@ def tac_sync_issues_cli(
             )
             existing_issue.labels = test_case_definition.labels
             if test_case_definition.generated_script_path is not None:
+                if existing_issue.pull_request is None:
+                    typer.echo(
+                        f"Test case definition with a title of '{test_case_definition.title}' "
+                        "has a generated script path of "
+                        f"'{test_case_definition.generated_script_path}' - "
+                        "but no Pull Request exists - creating one now"
+                    )
+                else:
+                    typer.echo(
+                        f"Test case definition with a title of '{test_case_definition.title}' "
+                        "has a generated script path of "
+                        f"'{test_case_definition.generated_script_path}' - "
+                        "but a Pull Request already exists - updating the Pull Request"
+                    )
+                # generated_script_path is a relative path from the relative
+                # path of the test automation scripts directory.
+                script_path = test_automation_scripts_directory / test_case_definition.generated_script_path
                 existing_issue.pull_request = PullRequestModel(
                     title=f"GenAI, Review: {test_case_definition.title}",
-                    files=[test_case_definition.generated_script_path],
+                    files=[str(script_path)],
                 )
             else:
                 existing_issue.pull_request = None
