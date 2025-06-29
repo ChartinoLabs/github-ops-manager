@@ -57,11 +57,7 @@ async def get_github_pat_client(github_pat_token: str, github_api_url: str) -> G
     if not github_pat_token:
         raise RuntimeError("GitHub PAT authentication requires github_pat_token in config.")
     # Disable HTTP caching to always get fresh data
-    return GitHub(
-        auth=TokenAuthStrategy(github_pat_token), 
-        base_url=github_api_url,
-        http_cache=False
-    )
+    return GitHub(auth=TokenAuthStrategy(github_pat_token), base_url=github_api_url, http_cache=False)
 
 
 async def get_github_client(

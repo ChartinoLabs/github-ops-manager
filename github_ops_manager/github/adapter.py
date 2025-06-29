@@ -15,7 +15,6 @@ from githubkit.versions.latest.models import (
     PullRequest,
     PullRequestSimple,
     Release,
-    Commit,
 )
 
 from github_ops_manager.configuration.models import GitHubAuthenticationType
@@ -85,7 +84,7 @@ class GitHubKitAdapter(GitHubClientBase):
         github_api_url: str = "https://api.github.com",
     ) -> Self:
         """Create a new GitHub client adapter.
-        
+
         Args:
             repo: Repository in 'owner/repo' format
             github_auth_type: Type of authentication (PAT or APP)
@@ -94,10 +93,10 @@ class GitHubKitAdapter(GitHubClientBase):
             github_app_private_key_path: Path to private key file (required for APP auth)
             github_app_installation_id: Installation ID (required for APP auth)
             github_api_url: GitHub API URL (defaults to https://api.github.com)
-            
+
         Returns:
             Configured GitHubKitAdapter instance
-            
+
         Raises:
             ValueError: If required parameters for the chosen auth type are missing
         """
@@ -501,12 +500,12 @@ class GitHubKitAdapter(GitHubClientBase):
             )
             releases: list[Release] = response.parsed_data
             logger.debug(f"Got {len(releases)} releases on page {page}")
-            
+
             for release in releases:
                 # Format dates as ISO strings for human readability
                 created_at_str = release.created_at.isoformat() if release.created_at else "N/A"
                 published_at_str = release.published_at.isoformat() if release.published_at else "N/A"
-                
+
                 logger.debug(
                     "Release found",
                     tag_name=release.tag_name,
@@ -516,14 +515,14 @@ class GitHubKitAdapter(GitHubClientBase):
                     created_at=created_at_str,
                     published_at=published_at_str,
                 )
-            
+
             if not releases:
                 break
             all_releases.extend(releases)
             if len(releases) < per_page:
                 break
             page += 1
-        
+
         logger.info(f"Total releases found: {len(all_releases)}")
         return all_releases
 
@@ -550,26 +549,26 @@ class GitHubKitAdapter(GitHubClientBase):
     @handle_github_422
     async def get_commit(self, commit_sha: str) -> dict[str, Any]:
         """Get a commit by SHA.
-        
+
         Returns the raw commit data as a dictionary instead of a Commit model
         due to githubkit's Pydantic model not matching GitHub's API response
         for the verification field.
-        
+
         Args:
             commit_sha: The commit SHA (can be abbreviated)
-            
+
         Returns:
             Dictionary containing the raw commit data from GitHub API
         """
         # IMPORTANT: githubkit Bug Workaround (as of v0.12.14)
-        # 
+        #
         # We return raw dict instead of parsed Commit model due to a Pydantic validation error
         # in githubkit's model definition. The issue occurs because:
         #
         # 1. GitHub's API returns this structure for commit verification:
         #    {
         #      "verified": false,
-        #      "reason": "unsigned", 
+        #      "reason": "unsigned",
         #      "signature": null,
         #      "payload": null
         #    }
@@ -584,7 +583,7 @@ class GitHubKitAdapter(GitHubClientBase):
         # This bug only surfaces when fetching full commit details (this endpoint), not when
         # getting commits through other endpoints like PR listings, because:
         # - Simple commit objects from PR listings don't include the verification field
-        # - Only the full commit details endpoint (/repos/{owner}/{repo}/commits/{ref}) 
+        # - Only the full commit details endpoint (/repos/{owner}/{repo}/commits/{ref})
         #   returns the problematic verification structure
         #
         # Our release notes feature needs full commit messages (including extended body text),
@@ -597,11 +596,7 @@ class GitHubKitAdapter(GitHubClientBase):
         #
         # When githubkit fixes their model, we can revert to returning typed Commit objects
         # by simply changing this to: return response.parsed_data
-        
-        response = await self.client.rest.repos.async_get_commit(
-            owner=self.owner,
-            repo=self.repo_name,
-            ref=commit_sha
-        )
+
+        response = await self.client.rest.repos.async_get_commit(owner=self.owner, repo=self.repo_name, ref=commit_sha)
         # Return raw JSON response instead of parsed_data due to githubkit bug
         return response.json()

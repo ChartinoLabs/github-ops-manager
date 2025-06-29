@@ -1,16 +1,16 @@
 """Release notes generation module."""
 
-from .models import (
-    ReleaseNotesStatus,
-    ReleaseNotesFileConfig,
-    PRWithCommits,
-    ReleaseNotesResult,
-    ContentGenerator,
-)
 from .detector import VersionDetector
 from .extractor import DataExtractor
-from .markdown import MarkdownWriter
 from .generator import ReleaseNotesGenerator
+from .markdown import MarkdownWriter
+from .models import (
+    ContentGenerator,
+    PRWithCommits,
+    ReleaseNotesFileConfig,
+    ReleaseNotesResult,
+    ReleaseNotesStatus,
+)
 
 __all__ = [
     "ReleaseNotesStatus",
@@ -22,4 +22,4 @@ __all__ = [
     "DataExtractor",
     "MarkdownWriter",
     "ReleaseNotesGenerator",
-] 
+]
