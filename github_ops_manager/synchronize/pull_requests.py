@@ -168,6 +168,13 @@ async def sync_github_pull_request(
     # Ignoring type below because we know that the pull_request field is
     # not None at this point.
     pr: PullRequestModel = desired_issue.pull_request  # type: ignore
+    if testing_as_code_workflow is True:
+        pr.body = (
+            f"**Quicksilver**: Automatically generated Pull Request for "
+            f"issue #{existing_issue.number}, {existing_issue.title}. "
+            f"Closes #{existing_issue.number}"
+        )
+
     if pr.body is None:
         pr.body = f"Closes #{existing_issue.number}"
     pr_labels = pr.labels or []
@@ -178,14 +185,7 @@ async def sync_github_pull_request(
     # Ensure that pull request body has closing keywords. If it doesn't,
     # then we need to add them to the bottom of the body.
     if not await pull_request_has_closing_keywords(existing_issue.number, pr.body):
-        if testing_as_code_workflow:
-            pr.body = (
-                f"**Quicksilver**: Automatically generated Pull Request for "
-                f"issue #{existing_issue.number}, {existing_issue.title}. "
-                f"Closes #{existing_issue.number}"
-            )
-        else:
-            pr.body = f"{pr.body}\n\nCloses #{existing_issue.number}"
+        pr.body = f"{pr.body}\n\nCloses #{existing_issue.number}"
 
     # Make overall PR sync decision
     pr_sync_decision = await decide_github_pull_request_sync_action(desired_issue, existing_pull_request=existing_pull_request)
