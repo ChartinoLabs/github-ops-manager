@@ -207,6 +207,10 @@ def process_issues_cli(
     github_app_private_key_path: Path | None = ctx.obj["github_app_private_key_path"]
     github_app_installation_id: int = ctx.obj["github_app_installation_id"]
     github_auth_type = ctx.obj["github_auth_type"]
+
+    if testing_as_code_workflow is True:
+        typer.echo("Testing as Code workflow is enabled - any Pull Requests created will have an augmented body")
+
     # Run the workflow
     result = asyncio.run(
         run_process_issues_workflow(
@@ -226,10 +230,6 @@ def process_issues_cli(
         for err in result.errors:
             typer.echo(str(err), err=True)
         sys.exit(1)
-
-    typer.echo(f"Loaded {len(result.issue_synchronization_results.results)} issues from {yaml_path}")
-    if result.issue_synchronization_results.results:
-        typer.echo(f"First issue: {result.issue_synchronization_results.results[0].desired_issue.model_dump()}")
 
 
 # --- Move export-issues under repo_app ---
