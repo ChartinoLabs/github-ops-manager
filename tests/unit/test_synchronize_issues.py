@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import jinja2
 import pytest
 
+import github_ops_manager.synchronize.issues
 from github_ops_manager.github.adapter import GitHubKitAdapter
 from github_ops_manager.schemas.default_issue import IssueModel, IssuesYAMLModel
 from github_ops_manager.synchronize.issues import (
@@ -179,7 +180,7 @@ async def test_render_issue_bodies_success() -> None:
     model = IssuesYAMLModel(issue_template="fake_template.j2", issues=issues)
     mock_template = MagicMock()
     mock_template.render.side_effect = lambda **ctx: f"rendered: {ctx['title']}"
-    with patch("github_ops_manager.synchronize.issues.construct_jinja2_template", new=AsyncMock(return_value=mock_template)):
+    with patch.object(github_ops_manager.synchronize.issues, "construct_jinja2_template", new=AsyncMock(return_value=mock_template)):
         result = await render_issue_bodies(model)
     assert result.issues[0].body == "rendered: Test"
     assert result.issues[1].body == "should stay"
@@ -190,8 +191,8 @@ async def test_render_issue_bodies_template_syntax_error() -> None:
     """Test that a jinja2.TemplateSyntaxError is properly raised and logged."""
     issues = [IssueModel(title="Test", body="old", data={"foo": "bar"})]
     model = IssuesYAMLModel(issue_template="bad_template.j2", issues=issues)
-    with patch(
-        "github_ops_manager.synchronize.issues.construct_jinja2_template", new=AsyncMock(side_effect=jinja2.TemplateSyntaxError("bad syntax", 1))
+    with patch.object(
+        github_ops_manager.synchronize.issues, "construct_jinja2_template", new=AsyncMock(side_effect=jinja2.TemplateSyntaxError("bad syntax", 1))
     ):
         with pytest.raises(jinja2.TemplateSyntaxError):
             await render_issue_bodies(model)
@@ -204,6 +205,6 @@ async def test_render_issue_bodies_undefined_error() -> None:
     model = IssuesYAMLModel(issue_template="fake_template.j2", issues=issues)
     mock_template = MagicMock()
     mock_template.render.side_effect = jinja2.UndefinedError("undefined var")
-    with patch("github_ops_manager.synchronize.issues.construct_jinja2_template", new=AsyncMock(return_value=mock_template)):
+    with patch.object(github_ops_manager.synchronize.issues, "construct_jinja2_template", new=AsyncMock(return_value=mock_template)):
         with pytest.raises(jinja2.UndefinedError):
             await render_issue_bodies(model)

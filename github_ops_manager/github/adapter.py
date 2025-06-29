@@ -14,6 +14,7 @@ from githubkit.versions.latest.models import (
     Label,
     PullRequest,
     PullRequestSimple,
+    Release,
 )
 
 from github_ops_manager.configuration.models import GitHubAuthenticationType
@@ -76,13 +77,29 @@ class GitHubKitAdapter(GitHubClientBase):
         cls,
         repo: str,
         github_auth_type: GitHubAuthenticationType,
-        github_pat_token: str | None,
-        github_app_id: int | None,
-        github_app_private_key_path: Path | None,
-        github_app_installation_id: int | None,
-        github_api_url: str,
+        github_pat_token: str | None = None,
+        github_app_id: int | None = None,
+        github_app_private_key_path: Path | None = None,
+        github_app_installation_id: int | None = None,
+        github_api_url: str = "https://api.github.com",
     ) -> Self:
-        """Create a new GitHub client adapter."""
+        """Create a new GitHub client adapter.
+
+        Args:
+            repo: Repository in 'owner/repo' format
+            github_auth_type: Type of authentication (PAT or APP)
+            github_pat_token: Personal access token (required for PAT auth)
+            github_app_id: GitHub App ID (required for APP auth)
+            github_app_private_key_path: Path to private key file (required for APP auth)
+            github_app_installation_id: Installation ID (required for APP auth)
+            github_api_url: GitHub API URL (defaults to https://api.github.com)
+
+        Returns:
+            Configured GitHubKitAdapter instance
+
+        Raises:
+            ValueError: If required parameters for the chosen auth type are missing
+        """
         owner, repo_name = await split_repository_in_configuration(repo=repo)
         logger.info(
             "Creating client for GitHub instance and repository",
@@ -464,3 +481,122 @@ class GitHubKitAdapter(GitHubClientBase):
             ref=branch,
         )
         return base64.b64decode(response.parsed_data.content).decode("utf-8")
+
+    # Release/Tag Operations
+    @handle_github_422
+    async def list_releases(self, per_page: int = 100, **kwargs: Any) -> list[Release]:
+        """List all releases for a repository, handling pagination."""
+        logger.debug("Fetching releases", owner=self.owner, repo=self.repo_name, per_page=per_page)
+        all_releases: list[Release] = []
+        page: int = 1
+        while True:
+            logger.debug(f"Fetching releases page {page}")
+            response: Response[list[Release]] = await self.client.rest.repos.async_list_releases(
+                owner=self.owner,
+                repo=self.repo_name,
+                per_page=per_page,
+                page=page,
+                **kwargs,
+            )
+            releases: list[Release] = response.parsed_data
+            logger.debug(f"Got {len(releases)} releases on page {page}")
+
+            for release in releases:
+                # Format dates as ISO strings for human readability
+                created_at_str = release.created_at.isoformat() if release.created_at else "N/A"
+                published_at_str = release.published_at.isoformat() if release.published_at else "N/A"
+
+                logger.debug(
+                    "Release found",
+                    tag_name=release.tag_name,
+                    name=release.name,
+                    draft=release.draft,
+                    prerelease=release.prerelease,
+                    created_at=created_at_str,
+                    published_at=published_at_str,
+                )
+
+            if not releases:
+                break
+            all_releases.extend(releases)
+            if len(releases) < per_page:
+                break
+            page += 1
+
+        logger.info(f"Total releases found: {len(all_releases)}")
+        return all_releases
+
+    @handle_github_422
+    async def get_release(self, tag_name: str) -> Release:
+        """Get a specific release by tag name."""
+        response: Response[Release] = await self.client.rest.repos.async_get_release_by_tag(
+            owner=self.owner,
+            repo=self.repo_name,
+            tag=tag_name,
+        )
+        return response.parsed_data
+
+    @handle_github_422
+    async def get_latest_release(self) -> Release:
+        """Get the latest release for the repository."""
+        response: Response[Release] = await self.client.rest.repos.async_get_latest_release(
+            owner=self.owner,
+            repo=self.repo_name,
+        )
+        return response.parsed_data
+
+    # Commit Operations
+    @handle_github_422
+    async def get_commit(self, commit_sha: str) -> dict[str, Any]:
+        """Get a commit by SHA.
+
+        Returns the raw commit data as a dictionary instead of a Commit model
+        due to githubkit's Pydantic model not matching GitHub's API response
+        for the verification field.
+
+        Args:
+            commit_sha: The commit SHA (can be abbreviated)
+
+        Returns:
+            Dictionary containing the raw commit data from GitHub API
+        """
+        # IMPORTANT: githubkit Bug Workaround (as of v0.12.14)
+        #
+        # We return raw dict instead of parsed Commit model due to a Pydantic validation error
+        # in githubkit's model definition. The issue occurs because:
+        #
+        # 1. GitHub's API returns this structure for commit verification:
+        #    {
+        #      "verified": false,
+        #      "reason": "unsigned",
+        #      "signature": null,
+        #      "payload": null
+        #    }
+        #
+        # 2. But githubkit's Commit model expects either:
+        #    - The literal string "<UNSET>" (not a dict)
+        #    - OR a Verification object with a required "verified_at" field
+        #
+        # 3. GitHub's API doesn't include "verified_at", causing validation to fail with:
+        #    "commit.verification.Verification.verified_at Field required"
+        #
+        # This bug only surfaces when fetching full commit details (this endpoint), not when
+        # getting commits through other endpoints like PR listings, because:
+        # - Simple commit objects from PR listings don't include the verification field
+        # - Only the full commit details endpoint (/repos/{owner}/{repo}/commits/{ref})
+        #   returns the problematic verification structure
+        #
+        # Our release notes feature needs full commit messages (including extended body text),
+        # which is why we must use this endpoint and encountered this issue.
+        #
+        # Alternative approaches considered and rejected:
+        # - Catching ValidationError: Would hide real problems and create silent failures
+        # - Downgrading githubkit: Could introduce other compatibility issues
+        # - Using a different GitHub library: Too much refactoring for a single issue
+        #
+        # When githubkit fixes their model, we can revert to returning typed Commit objects
+        # by simply changing this to: return response.parsed_data
+
+        response = await self.client.rest.repos.async_get_commit(owner=self.owner, repo=self.repo_name, ref=commit_sha)
+        # Return raw JSON response instead of parsed_data due to githubkit bug
+        return response.json()
