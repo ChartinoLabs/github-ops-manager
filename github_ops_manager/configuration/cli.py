@@ -21,6 +21,7 @@ from github_ops_manager.schemas.tac import TestingAsCodeTestCaseDefinitions
 from github_ops_manager.synchronize.driver import run_process_issues_workflow
 from github_ops_manager.utils.tac import find_issue_with_title
 from github_ops_manager.utils.templates import construct_jinja2_template_from_file, render_template_with_model
+from github_ops_manager.utils.yaml import load_yaml_file
 
 load_dotenv()
 
@@ -44,8 +45,8 @@ def tac_sync_issues_cli(
         typer.echo(error, err=True)
         raise FileNotFoundError(error)
     typer.echo(f"Loading Testing as Code test case definitions from {testing_as_code_test_case_definitions.absolute()}")
-    testing_as_code_test_case_definitions_content = testing_as_code_test_case_definitions.read_text()
-    testing_as_code_test_case_definitions_model = TestingAsCodeTestCaseDefinitions.model_validate_json(testing_as_code_test_case_definitions_content)
+    testing_as_code_test_case_definitions_content = load_yaml_file(testing_as_code_test_case_definitions)
+    testing_as_code_test_case_definitions_model = TestingAsCodeTestCaseDefinitions.model_validate(testing_as_code_test_case_definitions_content)
     typer.echo(f"Loaded {len(testing_as_code_test_case_definitions_model.test_cases)} test case definitions")
 
     # Load the YAML file and validate it.
@@ -54,8 +55,8 @@ def tac_sync_issues_cli(
         typer.echo(error, err=True)
         raise FileNotFoundError(error)
     typer.echo(f"Loading issues from {yaml_path.absolute()}")
-    desired_issues_yaml_content = yaml_path.read_text()
-    desired_issues_yaml_model = IssuesYAMLModel.model_validate_json(desired_issues_yaml_content)
+    desired_issues_yaml_content = load_yaml_file(yaml_path)
+    desired_issues_yaml_model = IssuesYAMLModel.model_validate(desired_issues_yaml_content)
     typer.echo(f"Loaded {len(desired_issues_yaml_model.issues)} issues")
 
     # Ensure that the issue body Jinja2 template for Testing as Code issues
