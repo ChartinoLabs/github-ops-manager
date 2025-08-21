@@ -17,6 +17,11 @@ logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)
 
 async def pull_request_has_closing_keywords(issue_number: int, pull_request_body: str | None) -> bool:
     """Check if a pull request has closing keywords that reference an issue number."""
+    logger.debug(
+        "Analyzing pull request body for closing keywords",
+        issue_number=issue_number,
+        pull_request_body=pull_request_body,
+    )
     closing_keywords = [
         "close",
         "closes",
@@ -29,10 +34,12 @@ async def pull_request_has_closing_keywords(issue_number: int, pull_request_body
         "resolved",
     ]
     if pull_request_body is None:
+        logger.debug("Pull request body is None, so it cannot have closing keywords")
         return False
     for keyword in closing_keywords:
         if f"{keyword} #{issue_number}" in pull_request_body.lower():
             return True
+    logger.debug("Pull request body does not contain any closing keywords", issue_number=issue_number)
     return False
 
 
@@ -45,8 +52,11 @@ async def get_pull_request_associated_with_issue(issue: Issue, existing_pull_req
     have an API for directly getting the pull request associated with an issue.
     """
     for pr in existing_pull_requests:
+        logger.debug("Checking if pull request has closing keywords relating to issue", issue_number=issue.number, pull_request_body=pr.body)
         if await pull_request_has_closing_keywords(issue.number, pr.body):
+            logger.debug("Pull request has closing keywords relating to issue", issue_number=issue.number, pull_request_body=pr.body)
             return pr
+    logger.debug("No pull request has closing keywords relating to issue", issue_number=issue.number)
     return None
 
 
@@ -168,7 +178,12 @@ async def sync_github_pull_request(
 ) -> None:
     """Synchronize a specific pull request for an issue."""
     with bound_contextvars(
-        desired_issue_title=desired_issue.title, existing_issue_title=existing_issue.title, existing_issue_number=existing_issue.number
+        desired_issue_title=desired_issue.title,
+        existing_issue_title=existing_issue.title,
+        existing_issue_number=existing_issue.number,
+        existing_pull_request_number=existing_pull_request.number if existing_pull_request is not None else "None",
+        existing_pull_request_title=existing_pull_request.title if existing_pull_request is not None else "None",
+        existing_pull_request_body=existing_pull_request.body if existing_pull_request is not None else "None",
     ):
         # Ignoring type below because we know that the pull_request field is
         # not None at this point.
@@ -248,8 +263,15 @@ async def sync_github_pull_requests(
     desired_issues_with_prs = [issue for issue in desired_issues if issue.pull_request is not None]
     for desired_issue in desired_issues_with_prs:
         existing_issue = next((issue for issue in existing_issues if issue.title == desired_issue.title), None)
-        if existing_issue is None:
-            logger.error("Issue not found in existing issues", issue_title=desired_issue.title)
+        if existing_issue is not None:
+            logger.info(
+                "Existing issue found",
+                desired_issue_title=desired_issue.title,
+                existing_issue_title=existing_issue.title,
+                existing_issue_number=existing_issue.number,
+            )
+        else:
+            logger.error("Desired issue not found in existing issues", desired_issue_title=desired_issue.title)
             continue
 
         # Find existing PR associated with existing issue, if any.
