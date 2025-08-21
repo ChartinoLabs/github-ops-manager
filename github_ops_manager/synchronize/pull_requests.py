@@ -56,7 +56,10 @@ async def get_desired_pull_request_file_content(base_directory: Path, desired_is
     files: list[tuple[str, str]] = []
     for file in desired_issue.pull_request.files:
         file_path = base_directory / file
-        files.append((file, file_path.read_text(encoding="utf-8")))
+        if file_path.exists():
+            files.append((file, file_path.read_text(encoding="utf-8")))
+        else:
+            logger.warning("Pull Request file not found", file=file, issue_title=desired_issue.title)
     return files
 
 
@@ -162,11 +165,19 @@ async def sync_github_pull_request(
     default_branch: str,
     base_directory: Path,
     existing_pull_request: PullRequest | None = None,
+    testing_as_code_workflow: bool = False,
 ) -> None:
     """Synchronize a specific pull request for an issue."""
     # Ignoring type below because we know that the pull_request field is
     # not None at this point.
     pr: PullRequestModel = desired_issue.pull_request  # type: ignore
+    if testing_as_code_workflow is True:
+        pr.body = (
+            f"**Quicksilver**: Automatically generated Pull Request for "
+            f"issue #{existing_issue.number}, {existing_issue.title}. "
+            f"Closes #{existing_issue.number}"
+        )
+
     if pr.body is None:
         pr.body = f"Closes #{existing_issue.number}"
     pr_labels = pr.labels or []
@@ -227,6 +238,7 @@ async def sync_github_pull_requests(
     github_adapter: GitHubKitAdapter,
     default_branch: str,
     base_directory: Path,
+    testing_as_code_workflow: bool = False,
 ) -> None:
     """Process pull requests for issues that specify a pull_request field."""
     desired_issues_with_prs = [issue for issue in desired_issues if issue.pull_request is not None]
@@ -240,5 +252,11 @@ async def sync_github_pull_requests(
         existing_pr = await get_pull_request_associated_with_issue(existing_issue, existing_pull_requests)
 
         await sync_github_pull_request(
-            desired_issue, existing_issue, github_adapter, default_branch, base_directory, existing_pull_request=existing_pr
+            desired_issue,
+            existing_issue,
+            github_adapter,
+            default_branch,
+            base_directory,
+            existing_pull_request=existing_pr,
+            testing_as_code_workflow=testing_as_code_workflow,
         )

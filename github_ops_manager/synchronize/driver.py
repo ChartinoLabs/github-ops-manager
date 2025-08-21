@@ -26,6 +26,7 @@ async def run_process_issues_workflow(
     github_api_url: str,
     yaml_path: Path,
     raise_on_yaml_error: bool = False,
+    testing_as_code_workflow: bool = False,
 ) -> ProcessIssuesResult:
     """Run the process-issues workflow: load issues from YAML and return them/errors."""
     processor = YAMLProcessor(raise_on_error=raise_on_yaml_error)
@@ -114,7 +115,15 @@ async def run_process_issues_workflow(
 
     start_time = time.time()
     logger.info("Processing pull requests", start_time=start_time)
-    await sync_github_pull_requests(issues_model.issues, refreshed_issues, existing_pull_requests, github_adapter, default_branch, yaml_dir)
+    await sync_github_pull_requests(
+        issues_model.issues,
+        refreshed_issues,
+        existing_pull_requests,
+        github_adapter,
+        default_branch,
+        yaml_dir,
+        testing_as_code_workflow=testing_as_code_workflow,
+    )
     end_time = time.time()
     total_time = end_time - start_time
     logger.info("Processed pull requests", start_time=start_time, end_time=end_time, duration=round(total_time, 2))
