@@ -1,5 +1,6 @@
 """Contains logic for synchronizing pull requests."""
 
+import re
 from pathlib import Path
 
 import structlog
@@ -36,9 +37,22 @@ async def pull_request_has_closing_keywords(issue_number: int, pull_request_body
     if pull_request_body is None:
         logger.debug("Pull request body is None, so it cannot have closing keywords")
         return False
+
     for keyword in closing_keywords:
-        if f"{keyword} #{issue_number}" in pull_request_body.lower():
+        # Create regex pattern that matches:
+        # - Word boundary before keyword (\b)
+        # - The keyword
+        # - Word boundary after keyword (\b)
+        # - Flexible whitespace (\s+)
+        # - Hash symbol (#)
+        # - Exact issue number
+        # - Word boundary after issue number (\b)
+        pattern = rf"\b{re.escape(keyword)}\s+#{issue_number}\b"
+
+        if re.search(pattern, pull_request_body, re.IGNORECASE):
+            logger.debug("Pull request body contains closing keyword", keyword=keyword, issue_number=issue_number, pattern=pattern)
             return True
+
     logger.debug("Pull request body does not contain any closing keywords", issue_number=issue_number)
     return False
 
