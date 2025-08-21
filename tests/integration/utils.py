@@ -8,10 +8,10 @@ import uuid
 from pathlib import Path
 from typing import Callable
 
-import yaml
 from githubkit.versions.latest.models import Issue
 
 from github_ops_manager.github.adapter import GitHubKitAdapter
+from github_ops_manager.utils.yaml import dump_yaml_to_file
 
 
 def get_cli_script_path() -> str:
@@ -67,8 +67,10 @@ def _extract_label_names(issue: Issue) -> set[str]:
 def _write_yaml_issues_file(issues: list[dict], suffix: str = ".yaml") -> str:
     """Write issues to a temporary YAML file and return the file path."""
     with tempfile.NamedTemporaryFile("w", suffix=suffix, delete=False) as tmp_yaml:
-        yaml.dump({"issues": issues}, tmp_yaml)
-        return tmp_yaml.name
+        temp_path = Path(tmp_yaml.name)
+
+    dump_yaml_to_file({"issues": issues}, temp_path)
+    return str(temp_path)
 
 
 async def _wait_for_issues_on_github(
