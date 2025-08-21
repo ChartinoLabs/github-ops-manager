@@ -182,6 +182,8 @@ async def sync_github_pull_request(
         pr.body = f"Closes #{existing_issue.number}"
     pr_labels = pr.labels or []
 
+    logger.info("Pull request body", body=pr.body, existing_issue_number=existing_issue.number, existing_issue_title=existing_issue.title)
+
     # Determine branch name
     desired_branch_name = pr.branch or generate_branch_name(existing_issue.number, desired_issue.title)
 
