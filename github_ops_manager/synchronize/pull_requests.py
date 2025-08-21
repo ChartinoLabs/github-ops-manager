@@ -118,7 +118,13 @@ async def decide_github_pull_request_sync_action(desired_issue: IssueModel, exis
         )
         return SyncDecision.UPDATE
 
-    logger.info("Pull request is up to date", issue_title=desired_issue.title)
+    logger.info(
+        "Pull request is up to date",
+        issue_title=desired_issue.title,
+        pr_number=existing_pull_request.number,
+        pr_title=existing_pull_request.title,
+        pr_body=existing_pull_request.body,
+    )
     return SyncDecision.NOOP
 
 
@@ -174,8 +180,6 @@ async def sync_github_pull_request(
         pr.body = f"Closes #{existing_issue.number}"
     pr_labels = pr.labels or []
 
-    logger.info("Pull request body", body=pr.body, existing_issue_number=existing_issue.number, existing_issue_title=existing_issue.title)
-
     # Determine branch name
     desired_branch_name = pr.branch or generate_branch_name(existing_issue.number, desired_issue.title)
 
@@ -183,6 +187,8 @@ async def sync_github_pull_request(
     # then we need to add them to the bottom of the body.
     if not await pull_request_has_closing_keywords(existing_issue.number, pr.body):
         pr.body = f"{pr.body}\n\nCloses #{existing_issue.number}"
+
+    logger.info("Pull request body", body=pr.body, existing_issue_number=existing_issue.number, existing_issue_title=existing_issue.title)
 
     # Make overall PR sync decision
     pr_sync_decision = await decide_github_pull_request_sync_action(desired_issue, existing_pull_request=existing_pull_request)
