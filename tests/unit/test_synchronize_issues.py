@@ -25,8 +25,8 @@ from github_ops_manager.synchronize.models import SyncDecision
             id="create if github_issue is None",
         ),
         pytest.param(
-            SimpleNamespace(title="A", body="B", labels=["bug"], assignees=["alice"], milestone=1),
-            SimpleNamespace(title="A", body="B", labels=["bug"], assignees=["alice"], milestone=1),
+            SimpleNamespace(title="A", body="B", labels=["bug"], assignees=["alice"], milestone=1, number=1),
+            SimpleNamespace(title="A", body="B", labels=["bug"], assignees=["alice"], milestone=1, number=1),
             SyncDecision.NOOP,
             id="noop if all fields match",
         ),
