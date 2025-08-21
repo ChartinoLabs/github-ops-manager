@@ -99,7 +99,7 @@ async def decide_github_pull_request_sync_action(desired_issue: IssueModel, exis
         desired_value = getattr(desired_issue.pull_request, field, None)
         github_value = getattr(existing_pull_request, field, None)
         field_decision = await compare_github_field(desired_value, github_value)
-        if field_decision == SyncDecision.UPDATE:
+        if field_decision == SyncDecision.UPDATE or field_decision == SyncDecision.CREATE:
             logger.info(
                 "Pull request needs to be updated",
                 issue_title=desired_issue.title,
@@ -108,14 +108,6 @@ async def decide_github_pull_request_sync_action(desired_issue: IssueModel, exis
                 new_value=desired_value,
             )
             return SyncDecision.UPDATE
-        elif field_decision == SyncDecision.CREATE:
-            logger.info(
-                "Pull request needs to be created",
-                issue_title=desired_issue.title,
-                pr_field=field,
-                new_value=desired_value,
-            )
-            return SyncDecision.CREATE
 
     # Next, check the labels of the existing and desired pull request
     decision = await compare_label_sets(desired_issue.pull_request.labels, getattr(existing_pull_request, "labels", []))
