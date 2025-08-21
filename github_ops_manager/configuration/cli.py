@@ -9,7 +9,6 @@ from pathlib import Path
 
 import typer
 from dotenv import load_dotenv
-from ruamel.yaml import YAML
 from typer import Argument, Option
 from typing_extensions import Annotated
 
@@ -21,7 +20,7 @@ from github_ops_manager.schemas.tac import TestingAsCodeTestCaseDefinitions
 from github_ops_manager.synchronize.driver import run_process_issues_workflow
 from github_ops_manager.utils.tac import find_issue_with_title
 from github_ops_manager.utils.templates import construct_jinja2_template_from_file, render_template_with_model
-from github_ops_manager.utils.yaml import load_yaml_file
+from github_ops_manager.utils.yaml import dump_yaml_to_file, load_yaml_file
 
 load_dotenv()
 
@@ -145,12 +144,7 @@ def tac_sync_issues_cli(
     typer.echo(f"Updated desired issues YAML model to have a total of {len(desired_issues_yaml_model.issues)} issues")
 
     # Write the updated YAML file to disk.
-    yaml = YAML()
-    yaml.default_flow_style = False
-    yaml.explicit_start = True
-    yaml.indent(mapping=2, sequence=4, offset=2)
-    with open(yaml_path, "w", encoding="utf-8") as f:
-        yaml.dump(desired_issues_yaml_model.model_dump(mode="python", exclude_none=True, exclude_defaults=True), f)
+    dump_yaml_to_file(desired_issues_yaml_model.model_dump(mode="python", exclude_none=True, exclude_defaults=True), yaml_path)
     typer.echo(f"Successfully updated issues YAML model and saved to {yaml_path}")
 
 
@@ -386,13 +380,8 @@ def sync_new_files_cli(
         added_issues.append(issue_model)
 
     # 4. Write the updated issues file
-    yaml = YAML()
-    yaml.default_flow_style = False
-    yaml.explicit_start = True
-    yaml.indent(mapping=2, sequence=4, offset=2)
     try:
-        with open(issues_file, "w", encoding="utf-8") as f:
-            yaml.dump(issues_model.model_dump(mode="python", exclude_none=True, exclude_defaults=True), f)
+        dump_yaml_to_file(issues_model.model_dump(mode="python", exclude_none=True, exclude_defaults=True), issues_file)
     except Exception as exc:
         typer.echo(f"Error writing updated issues file: {exc}", err=True)
         raise typer.Exit(1) from exc

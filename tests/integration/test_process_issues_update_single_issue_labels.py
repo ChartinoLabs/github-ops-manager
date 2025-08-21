@@ -2,11 +2,12 @@
 
 import os
 import subprocess
+from pathlib import Path
 
 import pytest
-import yaml
 from githubkit.versions.latest.models import Issue
 
+from github_ops_manager.utils.yaml import dump_yaml_to_file
 from tests.integration.utils import (
     _close_issues_by_title,
     _extract_label_names,
@@ -56,8 +57,8 @@ async def test_real_github_issue_update_labels_single() -> None:
         assert _extract_label_names(created_issue) == set(initial_labels)
         # 2. Update the YAML file to add a new label
         yaml_issues[0]["labels"].append(new_label)
-        with open(tmp_yaml_path, "w") as f:
-            yaml.dump({"issues": yaml_issues}, f)
+
+        dump_yaml_to_file({"issues": yaml_issues}, Path(tmp_yaml_path))
         # 3. Run the CLI again to update the labels
         result_update = run_process_issues_cli(tmp_yaml_path)
         assert result_update.returncode == 0

@@ -2,11 +2,12 @@
 
 import os
 import subprocess
+from pathlib import Path
 
 import pytest
-import yaml
 from githubkit.versions.latest.models import Issue
 
+from github_ops_manager.utils.yaml import dump_yaml_to_file
 from tests.integration.utils import (
     _close_issues_by_title,
     _wait_for_issues_on_github,
@@ -58,8 +59,8 @@ async def test_real_github_issue_update_one_of_multiple() -> None:
             assert issue.body == initial_bodies[i]
         # 2. Update the body of the second issue in the YAML
         yaml_issues[1]["body"] = updated_body
-        with open(tmp_yaml_path, "w") as f:
-            yaml.dump({"issues": yaml_issues}, f)
+
+        dump_yaml_to_file({"issues": yaml_issues}, Path(tmp_yaml_path))
         # 3. Run the CLI again to update the issue
         result_update = run_process_issues_cli(tmp_yaml_path)
         assert result_update.returncode == 0
