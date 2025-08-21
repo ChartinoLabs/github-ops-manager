@@ -4,6 +4,7 @@ from pathlib import Path
 
 import structlog
 from githubkit.versions.latest.models import Issue, PullRequest
+from structlog.contextvars import bound_contextvars
 
 from github_ops_manager.github.adapter import GitHubKitAdapter
 from github_ops_manager.schemas.default_issue import IssueModel, PullRequestModel
@@ -166,69 +167,72 @@ async def sync_github_pull_request(
     testing_as_code_workflow: bool = False,
 ) -> None:
     """Synchronize a specific pull request for an issue."""
-    # Ignoring type below because we know that the pull_request field is
-    # not None at this point.
-    pr: PullRequestModel = desired_issue.pull_request  # type: ignore
-    if testing_as_code_workflow is True:
-        pr.body = (
-            f"**Quicksilver**: Automatically generated Pull Request for "
-            f"issue #{existing_issue.number}, {existing_issue.title}. "
-            f"Closes #{existing_issue.number}"
-        )
+    with bound_contextvars(
+        desired_issue_title=desired_issue.title, existing_issue_title=existing_issue.title, existing_issue_number=existing_issue.number
+    ):
+        # Ignoring type below because we know that the pull_request field is
+        # not None at this point.
+        pr: PullRequestModel = desired_issue.pull_request  # type: ignore
+        if testing_as_code_workflow is True:
+            pr.body = (
+                f"**Quicksilver**: Automatically generated Pull Request for "
+                f"issue #{existing_issue.number}, {existing_issue.title}. "
+                f"Closes #{existing_issue.number}"
+            )
 
-    if pr.body is None:
-        pr.body = f"Closes #{existing_issue.number}"
-    pr_labels = pr.labels or []
+        if pr.body is None:
+            pr.body = f"Closes #{existing_issue.number}"
+        pr_labels = pr.labels or []
 
-    # Determine branch name
-    desired_branch_name = pr.branch or generate_branch_name(existing_issue.number, desired_issue.title)
+        # Determine branch name
+        desired_branch_name = pr.branch or generate_branch_name(existing_issue.number, desired_issue.title)
 
-    # Ensure that pull request body has closing keywords. If it doesn't,
-    # then we need to add them to the bottom of the body.
-    if not await pull_request_has_closing_keywords(existing_issue.number, pr.body):
-        pr.body = f"{pr.body}\n\nCloses #{existing_issue.number}"
+        # Ensure that pull request body has closing keywords. If it doesn't,
+        # then we need to add them to the bottom of the body.
+        if not await pull_request_has_closing_keywords(existing_issue.number, pr.body):
+            pr.body = f"{pr.body}\n\nCloses #{existing_issue.number}"
 
-    logger.info("Pull request body", body=pr.body, existing_issue_number=existing_issue.number, existing_issue_title=existing_issue.title)
+        logger.info("Pull request body", body=pr.body, existing_issue_number=existing_issue.number, existing_issue_title=existing_issue.title)
 
-    # Make overall PR sync decision
-    pr_sync_decision = await decide_github_pull_request_sync_action(desired_issue, existing_pull_request=existing_pull_request)
-    if pr_sync_decision == SyncDecision.CREATE:
-        # Check if branch exists, create if not
-        if not await github_adapter.branch_exists(desired_branch_name):
-            logger.info("Creating branch for PR", branch=desired_branch_name, base_branch=default_branch)
-            await github_adapter.create_branch(desired_branch_name, default_branch)
-        else:
-            logger.info("Branch already exists, skipping creation", branch=desired_branch_name)
+        # Make overall PR sync decision
+        pr_sync_decision = await decide_github_pull_request_sync_action(desired_issue, existing_pull_request=existing_pull_request)
+        if pr_sync_decision == SyncDecision.CREATE:
+            # Check if branch exists, create if not
+            if not await github_adapter.branch_exists(desired_branch_name):
+                logger.info("Creating branch for PR", branch=desired_branch_name, base_branch=default_branch)
+                await github_adapter.create_branch(desired_branch_name, default_branch)
+            else:
+                logger.info("Branch already exists, skipping creation", branch=desired_branch_name)
 
-        # Commit files to branch
-        await commit_files_to_branch(desired_issue, existing_issue, desired_branch_name, base_directory, github_adapter)
-
-        logger.info("Creating new PR for issue", branch=desired_branch_name, base_branch=default_branch)
-        new_pr = await github_adapter.create_pull_request(
-            title=pr.title,
-            head=desired_branch_name,
-            base=default_branch,
-            body=pr.body,
-        )
-        logger.info("Created new PR", pr_number=new_pr.number, branch=desired_branch_name)
-        await github_adapter.set_labels_on_issue(new_pr.number, pr_labels)
-        logger.info("Set labels on new PR", pr_number=new_pr.number, labels=pr_labels)
-    elif pr_sync_decision == SyncDecision.UPDATE:
-        if existing_pull_request is None:
-            raise ValueError("Existing pull request not found")
-        logger.info("Updating existing PR for issue", pr_number=existing_pull_request.number)
-        await github_adapter.update_pull_request(
-            pull_number=existing_pull_request.number,
-            title=pr.title,
-            body=pr.body,
-        )
-        await github_adapter.set_labels_on_issue(existing_pull_request.number, pr_labels)
-        desired_file_data = await get_desired_pull_request_file_content(base_directory, desired_issue)
-        pr_file_sync_decision = await decide_github_pull_request_file_sync_action(desired_file_data, existing_pull_request, github_adapter)
-        if pr_file_sync_decision == SyncDecision.CREATE:
-            # The branch will already exist, so we don't need to create it.
-            # However, we do need to commit the files to the branch.
+            # Commit files to branch
             await commit_files_to_branch(desired_issue, existing_issue, desired_branch_name, base_directory, github_adapter)
+
+            logger.info("Creating new PR for issue", branch=desired_branch_name, base_branch=default_branch)
+            new_pr = await github_adapter.create_pull_request(
+                title=pr.title,
+                head=desired_branch_name,
+                base=default_branch,
+                body=pr.body,
+            )
+            logger.info("Created new PR", pr_number=new_pr.number, branch=desired_branch_name)
+            await github_adapter.set_labels_on_issue(new_pr.number, pr_labels)
+            logger.info("Set labels on new PR", pr_number=new_pr.number, labels=pr_labels)
+        elif pr_sync_decision == SyncDecision.UPDATE:
+            if existing_pull_request is None:
+                raise ValueError("Existing pull request not found")
+            logger.info("Updating existing PR for issue", pr_number=existing_pull_request.number)
+            await github_adapter.update_pull_request(
+                pull_number=existing_pull_request.number,
+                title=pr.title,
+                body=pr.body,
+            )
+            await github_adapter.set_labels_on_issue(existing_pull_request.number, pr_labels)
+            desired_file_data = await get_desired_pull_request_file_content(base_directory, desired_issue)
+            pr_file_sync_decision = await decide_github_pull_request_file_sync_action(desired_file_data, existing_pull_request, github_adapter)
+            if pr_file_sync_decision == SyncDecision.CREATE:
+                # The branch will already exist, so we don't need to create it.
+                # However, we do need to commit the files to the branch.
+                await commit_files_to_branch(desired_issue, existing_issue, desired_branch_name, base_directory, github_adapter)
 
 
 async def sync_github_pull_requests(
