@@ -12,7 +12,6 @@ from github_ops_manager.processing.yaml_processor import YAMLProcessingError, YA
 from github_ops_manager.synchronize.issues import render_issue_bodies, sync_github_issues
 from github_ops_manager.synchronize.pull_requests import sync_github_pull_requests
 from github_ops_manager.synchronize.results import AllIssueSynchronizationResults, ProcessIssuesResult
-from github_ops_manager.utils.yaml import dump_yaml_to_file
 
 logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)
 
@@ -128,16 +127,4 @@ async def run_process_issues_workflow(
     end_time = time.time()
     total_time = end_time - start_time
     logger.info("Processed pull requests", start_time=start_time, end_time=end_time, duration=round(total_time, 2))
-
-    # Write updated issues model back to YAML file if testing as code workflow is enabled.
-    # This ensures that any generated PR bodies are persisted to the YAML file.
-    if testing_as_code_workflow:
-        logger.info("Writing updated issues model back to YAML file", yaml_path=yaml_path)
-        try:
-            dump_yaml_to_file(issues_model.model_dump(mode="python", exclude_none=True, exclude_defaults=True), yaml_path)
-            logger.info("Successfully updated YAML file with generated PR bodies")
-        except Exception as exc:
-            logger.error("Failed to write updated issues model to YAML file", yaml_path=yaml_path, error=str(exc))
-            # Don't fail the entire workflow if YAML writing fails, just log the error
-
     return ProcessIssuesResult(issue_sync_results)
