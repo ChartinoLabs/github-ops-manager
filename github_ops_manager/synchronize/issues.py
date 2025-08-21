@@ -75,7 +75,7 @@ async def decide_github_issue_sync_action(desired_issue: IssueModel, github_issu
                 )
                 return SyncDecision.CREATE
 
-    logger.info("Issue is up to date", issue_title=desired_issue.title)
+    logger.info("Issue is up to date", issue_title=desired_issue.title, issue_number=github_issue.number)
     return SyncDecision.NOOP
 
 
