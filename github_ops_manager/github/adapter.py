@@ -19,6 +19,7 @@ from githubkit.versions.latest.models import (
 
 from github_ops_manager.configuration.models import GitHubAuthenticationType
 from github_ops_manager.utils.github import split_repository_in_configuration
+from github_ops_manager.utils.retry import retry_on_rate_limit
 
 from .abc import GitHubClientBase
 from .client import GitHubClient, get_github_client
@@ -119,6 +120,7 @@ class GitHubKitAdapter(GitHubClientBase):
         return cls(client, owner, repo_name)
 
     # Repository CRUD
+    @retry_on_rate_limit()
     async def get_repository(self) -> FullRepository:
         """Get the repository for the current client."""
         response: Response[FullRepository] = await self.client.rest.repos.async_get(owner=self.owner, repo=self.repo_name)
@@ -126,6 +128,7 @@ class GitHubKitAdapter(GitHubClientBase):
 
     # Issue CRUD
     @handle_github_422
+    @retry_on_rate_limit()
     async def create_issue(
         self,
         title: str,
@@ -152,6 +155,7 @@ class GitHubKitAdapter(GitHubClientBase):
         return response.parsed_data
 
     @handle_github_422
+    @retry_on_rate_limit()
     async def update_issue(
         self,
         issue_number: int,
@@ -181,6 +185,7 @@ class GitHubKitAdapter(GitHubClientBase):
         )
         return response.parsed_data
 
+    @retry_on_rate_limit()
     async def list_issues(self, state: Literal["open", "closed", "all"] = "all", per_page: int = 100, **kwargs: Any) -> list[Issue]:
         """List all issues for a repository, handling pagination."""
         all_issues: list[Issue] = []
@@ -204,6 +209,7 @@ class GitHubKitAdapter(GitHubClientBase):
         return all_issues
 
     @handle_github_422
+    @retry_on_rate_limit()
     async def close_issue(self, issue_number: int, **kwargs: Any) -> Issue:
         """Close an issue for a repository."""
         response: Response[Issue] = await self.client.rest.issues.async_update(
@@ -217,6 +223,7 @@ class GitHubKitAdapter(GitHubClientBase):
 
     # Label CRUD
     @handle_github_422
+    @retry_on_rate_limit()
     async def create_label(self, name: str, color: str, description: str | None = None, **kwargs: Any) -> Label:
         """Create a label for a repository."""
         params = self._omit_null_parameters(
@@ -233,6 +240,7 @@ class GitHubKitAdapter(GitHubClientBase):
         return response.parsed_data
 
     @handle_github_422
+    @retry_on_rate_limit()
     async def update_label(
         self,
         name: str,
@@ -256,17 +264,20 @@ class GitHubKitAdapter(GitHubClientBase):
         )
         return response.parsed_data
 
+    @retry_on_rate_limit()
     async def delete_label(self, name: str) -> None:
         """Delete a label for a repository."""
         await self.client.rest.issues.async_delete_label(owner=self.owner, repo=self.repo_name, name=name)
         return None
 
+    @retry_on_rate_limit()
     async def list_labels(self, **kwargs: Any) -> list[Label]:
         """List labels for a repository."""
         response: Response[list[Label]] = await self.client.rest.issues.async_list_labels_for_repo(owner=self.owner, repo=self.repo_name, **kwargs)
         return response.parsed_data
 
     @handle_github_422
+    @retry_on_rate_limit()
     async def set_labels_on_issue(self, issue_number: int, labels: list[str]) -> None:
         """Set labels on a specific issue (or pull request - GitHub considers them the same for label purposes)."""
         if labels:
@@ -284,6 +295,7 @@ class GitHubKitAdapter(GitHubClientBase):
             )
 
     # Pull Request CRUD
+    @retry_on_rate_limit()
     async def get_pull_request(self, pull_request_number: int) -> PullRequest:
         """Get a pull request from the repository."""
         response: Response[PullRequest] = await self.client.rest.pulls.async_get(
@@ -292,6 +304,7 @@ class GitHubKitAdapter(GitHubClientBase):
         return response.parsed_data
 
     @handle_github_422
+    @retry_on_rate_limit()
     async def create_pull_request(
         self,
         title: str,
@@ -320,6 +333,7 @@ class GitHubKitAdapter(GitHubClientBase):
         return response.parsed_data
 
     @handle_github_422
+    @retry_on_rate_limit()
     async def update_pull_request(
         self,
         pull_number: int,
@@ -347,6 +361,7 @@ class GitHubKitAdapter(GitHubClientBase):
         )
         return response.parsed_data
 
+    @retry_on_rate_limit()
     async def list_pull_requests(
         self, state: Literal["open", "closed", "all"] = "all", per_page: int = 100, **kwargs: Any
     ) -> list[PullRequestSimple]:
@@ -378,6 +393,7 @@ class GitHubKitAdapter(GitHubClientBase):
         return response.parsed_data
 
     @handle_github_422
+    @retry_on_rate_limit()
     async def close_pull_request(self, pull_number: int, **kwargs: Any) -> PullRequest:
         """Close a pull request for a repository."""
         response: Response[PullRequest] = await self.client.rest.pulls.async_update(
@@ -389,6 +405,7 @@ class GitHubKitAdapter(GitHubClientBase):
         )
         return response.parsed_data
 
+    @retry_on_rate_limit()
     async def branch_exists(self, branch_name: str) -> bool:
         """Check if a branch exists in the repository."""
         try:
@@ -400,6 +417,7 @@ class GitHubKitAdapter(GitHubClientBase):
             raise
 
     @handle_github_422
+    @retry_on_rate_limit()
     async def create_branch(self, branch_name: str, base_branch: str) -> None:
         """Create a new branch from the base branch."""
         try:
@@ -425,6 +443,7 @@ class GitHubKitAdapter(GitHubClientBase):
         logger.info("Created branch", branch=branch_name, base_branch=base_branch)
 
     @handle_github_422
+    @retry_on_rate_limit()
     async def commit_files_to_branch(
         self,
         branch_name: str,
@@ -463,6 +482,7 @@ class GitHubKitAdapter(GitHubClientBase):
             await self.client.rest.repos.async_create_or_update_file_contents(**params)
             logger.info("Committed file to branch", file=file_path, branch=branch_name)
 
+    @retry_on_rate_limit()
     async def list_files_in_pull_request(self, pull_number: int) -> list[Any]:
         """List files changed in a pull request."""
         response = await self.client.rest.pulls.async_list_files(
@@ -472,6 +492,7 @@ class GitHubKitAdapter(GitHubClientBase):
         )
         return response.parsed_data
 
+    @retry_on_rate_limit()
     async def get_file_content_from_pull_request(self, file_path: str, branch: str) -> str:
         """Get the content of a file from a specific branch (typically the PR's head branch)."""
         response = await self.client.rest.repos.async_get_content(
@@ -484,6 +505,7 @@ class GitHubKitAdapter(GitHubClientBase):
 
     # Release/Tag Operations
     @handle_github_422
+    @retry_on_rate_limit()
     async def list_releases(self, per_page: int = 100, **kwargs: Any) -> list[Release]:
         """List all releases for a repository, handling pagination."""
         logger.debug("Fetching releases", owner=self.owner, repo=self.repo_name, per_page=per_page)
@@ -527,6 +549,7 @@ class GitHubKitAdapter(GitHubClientBase):
         return all_releases
 
     @handle_github_422
+    @retry_on_rate_limit()
     async def get_release(self, tag_name: str) -> Release:
         """Get a specific release by tag name."""
         response: Response[Release] = await self.client.rest.repos.async_get_release_by_tag(
@@ -537,6 +560,7 @@ class GitHubKitAdapter(GitHubClientBase):
         return response.parsed_data
 
     @handle_github_422
+    @retry_on_rate_limit()
     async def get_latest_release(self) -> Release:
         """Get the latest release for the repository."""
         response: Response[Release] = await self.client.rest.repos.async_get_latest_release(
@@ -547,6 +571,7 @@ class GitHubKitAdapter(GitHubClientBase):
 
     # Commit Operations
     @handle_github_422
+    @retry_on_rate_limit()
     async def get_commit(self, commit_sha: str) -> dict[str, Any]:
         """Get a commit by SHA.
 
@@ -600,3 +625,234 @@ class GitHubKitAdapter(GitHubClientBase):
         response = await self.client.rest.repos.async_get_commit(owner=self.owner, repo=self.repo_name, ref=commit_sha)
         # Return raw JSON response instead of parsed_data due to githubkit bug
         return response.json()
+
+    # Organization Operations
+    @retry_on_rate_limit()
+    async def list_organization_repositories(self, org_name: str, per_page: int = 100, **kwargs: Any) -> list[FullRepository]:
+        """List all repositories for an organization, handling pagination.
+        
+        Args:
+            org_name: Name of the GitHub organization
+            per_page: Number of repositories per page (default: 100, max: 100)
+            **kwargs: Additional parameters to pass to the API
+                - type: Filter by repository type ('all', 'public', 'private', 'forks', 'sources', 'member')
+                - sort: Sort repositories ('created', 'updated', 'pushed', 'full_name')
+                - direction: Sort direction ('asc' or 'desc')
+                
+        Returns:
+            List of all repositories in the organization
+            
+        Example:
+            repos = await client.list_organization_repositories(
+                "my-org",
+                type="sources",  # Exclude forks
+                sort="updated",
+                direction="desc"
+            )
+        """
+        from github_ops_manager.utils.retry import retry_on_rate_limit
+        
+        @retry_on_rate_limit()
+        async def _fetch_page(page: int) -> list[FullRepository]:
+            response: Response[list[FullRepository]] = await self.client.rest.repos.async_list_for_org(
+                org=org_name,
+                per_page=per_page,
+                page=page,
+                **kwargs
+            )
+            return response.parsed_data
+        
+        all_repos: list[FullRepository] = []
+        page: int = 1
+        
+        logger.info(
+            "Fetching repositories for organization",
+            org=org_name,
+            per_page=per_page,
+            filters=kwargs
+        )
+        
+        while True:
+            logger.debug(f"Fetching organization repositories page {page}")
+            repos: list[FullRepository] = await _fetch_page(page)
+            
+            if not repos:
+                break
+                
+            all_repos.extend(repos)
+            
+            if len(repos) < per_page:
+                break
+                
+            page += 1
+            
+        logger.info(
+            "Fetched all repositories for organization",
+            org=org_name,
+            total_repos=len(all_repos)
+        )
+        
+        return all_repos
+
+    @retry_on_rate_limit()
+    async def list_commits(
+        self, 
+        sha: str | None = None,
+        path: str | None = None,
+        author: str | None = None,
+        committer: str | None = None,
+        since: str | None = None,
+        until: str | None = None,
+        per_page: int = 100,
+        **kwargs: Any
+    ) -> list[dict[str, Any]]:
+        """List commits for the repository with optional filters, handling pagination.
+        
+        Args:
+            sha: SHA or branch to start listing commits from (default: default branch)
+            path: Only commits containing this file path will be returned
+            author: GitHub username or email address to filter by commit author
+            committer: GitHub username or email address to filter by committer
+            since: ISO 8601 date string - only commits after this date
+            until: ISO 8601 date string - only commits before this date
+            per_page: Number of commits per page (default: 100, max: 100)
+            **kwargs: Additional parameters to pass to the API
+            
+        Returns:
+            List of commit dictionaries with full statistics
+            
+        Example:
+            # Get all commits by a specific author in the last week
+            from datetime import datetime, timedelta
+            week_ago = (datetime.now() - timedelta(days=7)).isoformat()
+            commits = await client.list_commits(
+                author="username",
+                since=week_ago
+            )
+        """
+        from github_ops_manager.utils.retry import retry_on_rate_limit
+        
+        @retry_on_rate_limit()
+        async def _fetch_page(page: int) -> list[dict[str, Any]]:
+            params = self._omit_null_parameters(
+                sha=sha,
+                path=path,
+                author=author,
+                committer=committer,
+                since=since,
+                until=until,
+                per_page=per_page,
+                page=page,
+                **kwargs
+            )
+            response = await self.client.rest.repos.async_list_commits(
+                owner=self.owner,
+                repo=self.repo_name,
+                **params
+            )
+            # Return raw JSON to include stats
+            return response.json()
+        
+        all_commits: list[dict[str, Any]] = []
+        page: int = 1
+        
+        logger.info(
+            "Fetching commits for repository",
+            owner=self.owner,
+            repo=self.repo_name,
+            filters={
+                "sha": sha,
+                "path": path,
+                "author": author,
+                "since": since,
+                "until": until,
+            }
+        )
+        
+        while True:
+            logger.debug(f"Fetching commits page {page}")
+            commits: list[dict[str, Any]] = await _fetch_page(page)
+            
+            if not commits:
+                break
+                
+            all_commits.extend(commits)
+            
+            if len(commits) < per_page:
+                break
+                
+            page += 1
+            
+        logger.info(
+            "Fetched all commits",
+            owner=self.owner,
+            repo=self.repo_name,
+            total_commits=len(all_commits)
+        )
+        
+        return all_commits
+
+    @retry_on_rate_limit()
+    async def list_pull_request_reviews(self, pull_number: int, per_page: int = 100, **kwargs: Any) -> list[Any]:
+        """List all reviews for a pull request, handling pagination.
+        
+        Args:
+            pull_number: The pull request number
+            per_page: Number of reviews per page (default: 100, max: 100)
+            **kwargs: Additional parameters to pass to the API
+            
+        Returns:
+            List of review objects
+            
+        Example:
+            reviews = await client.list_pull_request_reviews(123)
+            for review in reviews:
+                print(f"{review.user.login}: {review.state}")
+        """
+        from github_ops_manager.utils.retry import retry_on_rate_limit
+        
+        @retry_on_rate_limit()
+        async def _fetch_page(page: int) -> list[Any]:
+            response = await self.client.rest.pulls.async_list_reviews(
+                owner=self.owner,
+                repo=self.repo_name,
+                pull_number=pull_number,
+                per_page=per_page,
+                page=page,
+                **kwargs
+            )
+            return response.parsed_data
+        
+        all_reviews: list[Any] = []
+        page: int = 1
+        
+        logger.info(
+            "Fetching reviews for pull request",
+            owner=self.owner,
+            repo=self.repo_name,
+            pull_number=pull_number
+        )
+        
+        while True:
+            logger.debug(f"Fetching PR reviews page {page}")
+            reviews: list[Any] = await _fetch_page(page)
+            
+            if not reviews:
+                break
+                
+            all_reviews.extend(reviews)
+            
+            if len(reviews) < per_page:
+                break
+                
+            page += 1
+            
+        logger.info(
+            "Fetched all reviews for pull request",
+            owner=self.owner,
+            repo=self.repo_name,
+            pull_number=pull_number,
+            total_reviews=len(all_reviews)
+        )
+        
+        return all_reviews
