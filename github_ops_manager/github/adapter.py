@@ -626,6 +626,64 @@ class GitHubKitAdapter(GitHubClientBase):
         # Return raw JSON response instead of parsed_data due to githubkit bug
         return response.json()
 
+    @retry_on_rate_limit()
+    @handle_github_422
+    async def get_commit_stats(self, commit_sha: str) -> dict[str, Any]:
+        """Get detailed statistics for a specific commit.
+        
+        Args:
+            commit_sha: The SHA of the commit to get statistics for
+            
+        Returns:
+            Dictionary containing commit statistics with keys:
+            - additions: Number of lines added
+            - deletions: Number of lines deleted  
+            - total: Total lines changed (additions + deletions)
+            - files: List of filenames that were changed
+            
+        Example:
+            stats = await client.get_commit_stats("abc123...")
+            print(f"Lines added: {stats['additions']}")
+            print(f"Lines deleted: {stats['deletions']}")
+            print(f"Files changed: {len(stats['files'])}")
+        """
+        logger.debug(
+            "Fetching commit statistics",
+            owner=self.owner,
+            repo=self.repo_name,
+            commit_sha=commit_sha
+        )
+        
+        response = await self.client.rest.repos.async_get_commit(
+            owner=self.owner, 
+            repo=self.repo_name, 
+            ref=commit_sha
+        )
+        commit_data = response.json()
+        
+        # Extract statistics from the commit data
+        stats = commit_data.get('stats', {})
+        files = commit_data.get('files', [])
+        
+        result = {
+            'additions': stats.get('additions', 0),
+            'deletions': stats.get('deletions', 0),
+            'total': stats.get('total', 0),
+            'files': [f.get('filename', '') for f in files if f.get('filename')]
+        }
+        
+        logger.debug(
+            "Retrieved commit statistics",
+            owner=self.owner,
+            repo=self.repo_name,
+            commit_sha=commit_sha,
+            additions=result['additions'],
+            deletions=result['deletions'],
+            files_changed=len(result['files'])
+        )
+        
+        return result
+
     # Organization Operations
     @retry_on_rate_limit()
     async def list_organization_repositories(self, org_name: str, per_page: int = 100, **kwargs: Any) -> list[FullRepository]:
