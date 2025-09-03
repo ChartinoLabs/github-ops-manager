@@ -75,7 +75,7 @@ def tac_sync_issues_cli(
 
     # Ensure that the issue body Jinja2 template for Testing as Code issues
     # can be constructed.
-    template = construct_jinja2_template_from_file(Path("github_ops_manager/templates/tac_issues_body.j2"))
+    template = construct_jinja2_template_from_file(Path(__file__).parent.parent / "templates" / "tac_issues_body.j2")
 
     # Iterate through the test case definitions and ensure matching issues
     # exist in the YAML file.
