@@ -16,11 +16,10 @@ from github_ops_manager.configuration.reconcile import validate_github_authentic
 from github_ops_manager.github.adapter import GitHubKitAdapter
 from github_ops_manager.processing.yaml_processor import YAMLProcessor
 from github_ops_manager.schemas.default_issue import IssueModel, IssuesYAMLModel, PullRequestModel
-from github_ops_manager.schemas.tac import TestingAsCodeTestCaseDefinitions
 from github_ops_manager.synchronize.driver import run_process_issues_workflow
 from github_ops_manager.utils.tac import find_issue_with_title
 from github_ops_manager.utils.templates import construct_jinja2_template_from_file, render_template_with_model
-from github_ops_manager.utils.yaml import dump_yaml_to_file, load_yaml_file
+from github_ops_manager.utils.yaml import dump_yaml_to_file, load_test_case_definitions_from_directory, load_yaml_file
 
 load_dotenv()
 
@@ -33,23 +32,36 @@ def tac_sync_issues_cli(
     ctx: typer.Context,
     yaml_path: Annotated[Path, Argument(envvar="YAML_PATH", help="Path to YAML file for issues.")],
     testing_as_code_test_case_definitions: Annotated[
-        Path, Argument(envvar="TESTING_AS_CODE_TEST_CASE_DEFINITIONS", help="Path to Testing as Code test case definitions.")
+        Path,
+        Argument(
+            envvar="TESTING_AS_CODE_TEST_CASE_DEFINITIONS", help="Path to directory containing Testing as Code test case definitions YAML files."
+        ),
     ],
     test_automation_scripts_directory: Annotated[
         Path, Argument(envvar="TEST_AUTOMATION_SCRIPTS_DIRECTORY", help="Path to directory containing test automation scripts.")
     ],
 ) -> None:
     """Sync issues in a GitHub repository using the Testing as Code methodology."""
-    # Load TAC test case definition data model can be loaded from file and
-    # is syntactically correct.
+    # Load TAC test case definition data model from directory and
+    # validate all files are syntactically correct.
     if not testing_as_code_test_case_definitions.exists():
-        error = f"Testing as Code test case definitions file not found: {testing_as_code_test_case_definitions.absolute()}"
+        error = f"Testing as Code test case definitions directory not found: {testing_as_code_test_case_definitions.absolute()}"
         typer.echo(error, err=True)
         raise FileNotFoundError(error)
-    typer.echo(f"Loading Testing as Code test case definitions from {testing_as_code_test_case_definitions.absolute()}")
-    testing_as_code_test_case_definitions_content = load_yaml_file(testing_as_code_test_case_definitions)
-    testing_as_code_test_case_definitions_model = TestingAsCodeTestCaseDefinitions.model_validate(testing_as_code_test_case_definitions_content)
-    typer.echo(f"Loaded {len(testing_as_code_test_case_definitions_model.test_cases)} test case definitions")
+
+    if not testing_as_code_test_case_definitions.is_dir():
+        error = f"Testing as Code test case definitions path is not a directory: {testing_as_code_test_case_definitions.absolute()}"
+        typer.echo(error, err=True)
+        raise ValueError(error)
+
+    typer.echo(f"Loading Testing as Code test case definitions from directory {testing_as_code_test_case_definitions.absolute()}")
+
+    try:
+        testing_as_code_test_case_definitions_model = load_test_case_definitions_from_directory(testing_as_code_test_case_definitions)
+        typer.echo(f"Loaded {len(testing_as_code_test_case_definitions_model.test_cases)} test case definitions from directory")
+    except ValueError as e:
+        typer.echo(f"Error loading test case definitions: {str(e)}", err=True)
+        raise e
 
     # Load the YAML file and validate it.
     if not yaml_path.exists():
