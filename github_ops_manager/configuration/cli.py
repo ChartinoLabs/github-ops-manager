@@ -12,6 +12,7 @@ from dotenv import load_dotenv
 from typer import Argument, Option
 from typing_extensions import Annotated
 
+from github_ops_manager.configuration.models import GitHubAuthenticationType
 from github_ops_manager.configuration.reconcile import validate_github_authentication_configuration
 from github_ops_manager.github.adapter import GitHubKitAdapter
 from github_ops_manager.processing.yaml_processor import YAMLProcessor
@@ -335,6 +336,176 @@ def fetch_files_cli(
 
 # --- Register the repo_app as a sub-app of the main Typer app ---
 typer_app.add_typer(repo_app, name="repo")
+
+
+# --- Team Management Command ---
+@typer_app.command(name="add-users-to-team")
+def add_users_to_team_cli(
+    usernames_file: Annotated[Path, Argument(help="Path to text file containing GitHub usernames (one per line).")],
+    org_name: Annotated[str, Option("--org-name", help="GitHub organization name.")],
+    team_name: Annotated[str, Option("--team-name", help="GitHub team name (slug).")],
+    github_api_url: Annotated[str, Option(envvar="GITHUB_API_URL", help="GitHub API URL.")] = "https://api.github.com",
+    github_pat_token: Annotated[str | None, Option(envvar="GITHUB_PAT_TOKEN", help="GitHub Personal Access Token.")] = None,
+    github_app_id: Annotated[int | None, Option(envvar="GITHUB_APP_ID", help="GitHub App ID.")] = None,
+    github_app_private_key_path: Annotated[Path | None, Option(envvar="GITHUB_APP_PRIVATE_KEY_PATH", help="Path to GitHub App private key.")] = None,
+    github_app_installation_id: Annotated[int | None, Option(envvar="GITHUB_APP_INSTALLATION_ID", help="GitHub App Installation ID.")] = None,
+    missing_users_file: Annotated[Path, Option("--missing-users-file", help="Path to save missing users file.")] = Path("missing_users.txt"),
+    debug: Annotated[bool, Option(envvar="DEBUG", help="Enable debug mode.")] = False,
+) -> None:
+    """Add users to a GitHub team by reading usernames from a file.
+
+    Reads GitHub usernames from a text file (one per line) and attempts to add each
+    user to the specified team. Users that cannot be found on GitHub will be saved
+    to a missing_users.txt file in the current directory.
+    """
+    if not usernames_file.exists():
+        typer.echo(f"Error: Usernames file not found: {usernames_file}", err=True)
+        raise typer.Exit(1)
+
+    # Validate GitHub authentication configuration
+    github_auth_type = asyncio.run(
+        validate_github_authentication_configuration(
+            github_pat_token=github_pat_token,
+            github_app_id=github_app_id,
+            github_app_private_key_path=github_app_private_key_path,
+            github_app_installation_id=github_app_installation_id,
+        )
+    )
+
+    # Run the team management workflow
+    result = asyncio.run(
+        run_add_users_to_team_workflow(
+            usernames_file=usernames_file,
+            org_name=org_name,
+            team_name=team_name,
+            github_auth_type=github_auth_type,
+            github_pat_token=github_pat_token,
+            github_app_id=github_app_id,
+            github_app_private_key_path=github_app_private_key_path,
+            github_app_installation_id=github_app_installation_id,
+            github_api_url=github_api_url,
+            missing_users_file=missing_users_file,
+            debug=debug,
+        )
+    )
+
+    typer.echo("Team management completed!")
+    typer.echo(f"✅ Successfully added {result['added_count']} users to team {org_name}/{team_name}")
+    if result["missing_count"] > 0:
+        typer.echo(f"⚠️  {result['missing_count']} users could not be found and were saved to {missing_users_file}")
+    if result["already_member_count"] > 0:
+        typer.echo(f"ℹ️  {result['already_member_count']} users were already team members")
+    if result["error_count"] > 0:
+        typer.echo(f"❌ {result['error_count']} errors occurred during processing")
+
+
+async def run_add_users_to_team_workflow(
+    usernames_file: Path,
+    org_name: str,
+    team_name: str,
+    github_auth_type: GitHubAuthenticationType,
+    github_pat_token: str | None,
+    github_app_id: int | None,
+    github_app_private_key_path: Path | None,
+    github_app_installation_id: int | None,
+    github_api_url: str,
+    missing_users_file: Path,
+    debug: bool = False,
+) -> dict[str, int]:
+    """Core workflow for adding users to a GitHub team.
+
+    Returns:
+        Dictionary with counts of added, missing, already_member, and error users
+    """
+    # Create GitHub adapter (we'll use a dummy repo since we need auth)
+    adapter = await GitHubKitAdapter.create(
+        repo=f"{org_name}/dummy-repo",  # This is a hack since we need auth but not repo-specific
+        github_auth_type=github_auth_type,
+        github_pat_token=github_pat_token,
+        github_app_id=github_app_id,
+        github_app_private_key_path=github_app_private_key_path,
+        github_app_installation_id=github_app_installation_id,
+        github_api_url=github_api_url,
+    )
+
+    # Verify team exists
+    team = await adapter.get_team(org_name, team_name)
+    if not team:
+        typer.echo(f"Error: Team '{team_name}' not found in organization '{org_name}'", err=True)
+        raise typer.Exit(1)
+
+    typer.echo(f"Found team: {team.name} (ID: {team.id}) in {org_name}")
+
+    # Read usernames from file
+    try:
+        with open(usernames_file) as f:
+            usernames = [line.strip() for line in f if line.strip()]
+    except Exception as e:
+        typer.echo(f"Error reading usernames file: {e}", err=True)
+        raise typer.Exit(1) from e
+
+    typer.echo(f"Found {len(usernames)} usernames to process")
+
+    # Process each username
+    added_count = 0
+    missing_count = 0
+    already_member_count = 0
+    error_count = 0
+    missing_users: list[str] = []
+
+    for username in usernames:
+        try:
+            typer.echo(f"Processing: {username}")
+
+            # Check if user exists
+            user = await adapter.get_user_by_username(username)
+
+            if not user:
+                typer.echo(f"  ❌ GitHub user not found: {username}")
+                missing_users.append(username)
+                missing_count += 1
+                continue
+
+            typer.echo(f"  ✅ Found GitHub user: {username}")
+
+            # Check if already a team member
+            is_member = await adapter.check_team_membership(org_name, team_name, username)
+            if is_member:
+                typer.echo(f"  ℹ️  User {username} is already a team member")
+                already_member_count += 1
+                continue
+
+            # Add user to team
+            success = await adapter.add_user_to_team(org_name, team_name, username)
+            if success:
+                typer.echo(f"  ✅ Successfully added {username} to team")
+                added_count += 1
+            else:
+                typer.echo(f"  ❌ Failed to add {username} to team")
+                error_count += 1
+
+        except Exception as e:
+            typer.echo(f"  ❌ Error processing {username}: {e}")
+            error_count += 1
+            if debug:
+                traceback.print_exc()
+
+    # Write missing users to file
+    if missing_users:
+        try:
+            with open(missing_users_file, "w") as f:
+                for username in missing_users:
+                    f.write(f"{username}\n")
+            typer.echo(f"Missing users saved to: {missing_users_file}")
+        except Exception as e:
+            typer.echo(f"Error writing missing users file: {e}", err=True)
+
+    return {
+        "added_count": added_count,
+        "missing_count": missing_count,
+        "already_member_count": already_member_count,
+        "error_count": error_count,
+    }
 
 
 # Restore sync-new-files as a top-level command

@@ -15,6 +15,8 @@ from githubkit.versions.latest.models import (
     PullRequest,
     PullRequestSimple,
     Release,
+    SimpleUser,
+    Team,
 )
 
 from github_ops_manager.configuration.models import GitHubAuthenticationType
@@ -600,3 +602,153 @@ class GitHubKitAdapter(GitHubClientBase):
         response = await self.client.rest.repos.async_get_commit(owner=self.owner, repo=self.repo_name, ref=commit_sha)
         # Return raw JSON response instead of parsed_data due to githubkit bug
         return response.json()
+
+    # Team Management Operations
+    @handle_github_422
+    async def get_user_by_username(self, username: str) -> SimpleUser | None:
+        """Get a GitHub user by username.
+
+        Args:
+            username: The GitHub username to look up
+
+        Returns:
+            SimpleUser object if found, None if not found
+
+        Raises:
+            ValueError: If there's an error other than user not found
+        """
+        try:
+            response: Response[SimpleUser] = await self.client.rest.users.async_get_by_username(username=username)
+            return response.parsed_data
+        except RequestFailed as exc:
+            if exc.response.status_code == 404:
+                return None
+            raise ValueError(f"Error getting user {username}: {exc}") from exc
+
+    @handle_github_422
+    async def search_users_by_email(self, email: str) -> list[SimpleUser]:
+        """Search for GitHub users by email address.
+
+        Args:
+            email: The email address to search for
+
+        Returns:
+            List of SimpleUser objects matching the email
+
+        Note:
+            This uses GitHub's user search API which may have limitations
+            based on the user's privacy settings.
+        """
+        try:
+            response = await self.client.rest.search.async_users(q=f"{email} in:email")
+            return response.parsed_data.items
+        except RequestFailed as exc:
+            logger.error("Error searching users by email", email=email, error=str(exc))
+            return []
+
+    @handle_github_422
+    async def get_team(self, org: str, team_slug: str) -> Team | None:
+        """Get team information by organization and team slug.
+
+        Args:
+            org: The organization name
+            team_slug: The team slug (name)
+
+        Returns:
+            Team object if found, None if not found
+
+        Raises:
+            ValueError: If there's an error other than team not found
+        """
+        try:
+            response: Response[Team] = await self.client.rest.teams.async_get_by_name(org=org, team_slug=team_slug)
+            return response.parsed_data
+        except RequestFailed as exc:
+            if exc.response.status_code == 404:
+                return None
+            raise ValueError(f"Error getting team {org}/{team_slug}: {exc}") from exc
+
+    @handle_github_422
+    async def add_user_to_team(self, org: str, team_slug: str, username: str) -> bool:
+        """Add a user to a GitHub team.
+
+        Args:
+            org: The organization name
+            team_slug: The team slug (name)
+            username: The GitHub username to add
+
+        Returns:
+            True if user was added successfully, False otherwise
+
+        Raises:
+            ValueError: If there's an error adding the user to the team
+        """
+        try:
+            await self.client.rest.teams.async_add_or_update_membership_for_user_in_org(org=org, team_slug=team_slug, username=username)
+            logger.info("Successfully added user to team", username=username, org=org, team=team_slug)
+            return True
+        except RequestFailed as exc:
+            if exc.response.status_code == 404:
+                logger.error("Team or user not found", username=username, org=org, team=team_slug)
+                return False
+            elif exc.response.status_code == 403:
+                # Get detailed error message from GitHub API response
+                try:
+                    error_data = exc.response.json()
+                    error_message = error_data.get("message", "Forbidden")
+                    detailed_errors = error_data.get("errors", [])
+
+                    # Common 403 reasons for team membership
+                    if "must be an organization owner or team maintainer" in error_message.lower():
+                        detailed_message = (
+                            "Permission denied: You must be an organization owner or team maintainer "
+                            "to add users to this team. Current permissions are insufficient."
+                        )
+                    elif "not a member" in error_message.lower():
+                        detailed_message = (
+                            f"Permission denied: User '{username}' is not a member of the '{org}' organization. "
+                            "Users must be organization members before being added to teams."
+                        )
+                    elif "private" in error_message.lower() or "visibility" in error_message.lower():
+                        detailed_message = (
+                            "Permission denied: Team visibility settings prevent adding this user. "
+                            "The team may be private or have restricted membership policies."
+                        )
+                    else:
+                        detailed_message = f"Permission denied (403 Forbidden): {error_message}"
+                        if detailed_errors:
+                            detailed_message += f" Details: {'; '.join([str(err) for err in detailed_errors])}"
+
+                    logger.error(
+                        "Team membership permission denied", username=username, org=org, team=team_slug, message=error_message, errors=detailed_errors
+                    )
+
+                except Exception:
+                    detailed_message = (
+                        f"Permission denied (403 Forbidden): You don't have permission to add users to team "
+                        f"'{org}/{team_slug}'. You must be an organization owner or team maintainer."
+                    )
+
+                raise ValueError(detailed_message) from exc
+
+            raise ValueError(f"Error adding user {username} to team {org}/{team_slug}: {exc}") from exc
+
+    @handle_github_422
+    async def check_team_membership(self, org: str, team_slug: str, username: str) -> bool:
+        """Check if a user is already a member of a team.
+
+        Args:
+            org: The organization name
+            team_slug: The team slug (name)
+            username: The GitHub username to check
+
+        Returns:
+            True if user is a team member, False otherwise
+        """
+        try:
+            await self.client.rest.teams.async_get_membership_for_user_in_org(org=org, team_slug=team_slug, username=username)
+            return True
+        except RequestFailed as exc:
+            if exc.response.status_code == 404:
+                return False
+            raise ValueError(f"Error checking team membership for {username} in {org}/{team_slug}: {exc}") from exc

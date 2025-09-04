@@ -144,6 +144,32 @@ class GitHubClientBase(ABC):
         """Set labels on a specific issue (or pull request)."""
         pass
 
+    # Team Management Operations
+    @abstractmethod
+    async def get_user_by_username(self, username: str) -> Any:
+        """Get a GitHub user by username."""
+        pass
+
+    @abstractmethod
+    async def search_users_by_email(self, email: str) -> list[Any]:
+        """Search for GitHub users by email address."""
+        pass
+
+    @abstractmethod
+    async def get_team(self, org: str, team_slug: str) -> Any:
+        """Get team information by organization and team slug."""
+        pass
+
+    @abstractmethod
+    async def add_user_to_team(self, org: str, team_slug: str, username: str) -> bool:
+        """Add a user to a GitHub team."""
+        pass
+
+    @abstractmethod
+    async def check_team_membership(self, org: str, team_slug: str, username: str) -> bool:
+        """Check if a user is already a member of a team."""
+        pass
+
     # Release/Tag Operations
     @abstractmethod
     async def list_releases(self, per_page: int = 100, **kwargs: Any) -> list[Any]:
