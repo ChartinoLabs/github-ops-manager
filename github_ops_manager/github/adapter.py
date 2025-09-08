@@ -493,6 +493,70 @@ class GitHubKitAdapter(GitHubClientBase):
         return response.parsed_data
 
     @retry_on_rate_limit()
+    @handle_github_422
+    async def get_pull_request_files_with_stats(self, pr_number: int) -> list[dict[str, Any]]:
+        """Get PR files with detailed statistics.
+        
+        This method enhances the basic file listing by ensuring consistent
+        statistics are available and properly formatted for all files.
+        
+        Args:
+            pr_number: Pull request number
+            
+        Returns:
+            List of dictionaries with consistent file statistics:
+            - filename: Name of the changed file
+            - additions: Number of lines added (guaranteed integer)
+            - deletions: Number of lines deleted (guaranteed integer) 
+            - changes: Total changes (additions + deletions)
+            - status: File change status (added, modified, deleted, etc.)
+            - patch: Optional diff patch content
+            
+        Example:
+            files = await adapter.get_pull_request_files_with_stats(123)
+            for file in files:
+                print(f"{file['filename']}: +{file['additions']} -{file['deletions']}")
+        """
+        logger.debug(
+            "Fetching PR files with enhanced statistics",
+            owner=self.owner,
+            repo=self.repo_name,
+            pr_number=pr_number,
+        )
+        
+        # Use existing method to get raw file data
+        files = await self.list_files_in_pull_request(pr_number)
+        
+        # Format with consistent structure and guaranteed statistics
+        formatted_files = []
+        for file_data in files:
+            # Extract statistics with safe defaults
+            additions = getattr(file_data, 'additions', 0) or 0
+            deletions = getattr(file_data, 'deletions', 0) or 0
+            
+            formatted_file = {
+                'filename': getattr(file_data, 'filename', ''),
+                'additions': additions,
+                'deletions': deletions,
+                'changes': additions + deletions,
+                'status': getattr(file_data, 'status', 'unknown'),
+                'patch': getattr(file_data, 'patch', None),
+            }
+            formatted_files.append(formatted_file)
+        
+        logger.debug(
+            "Enhanced PR file statistics processed",
+            owner=self.owner,
+            repo=self.repo_name,
+            pr_number=pr_number,
+            file_count=len(formatted_files),
+            total_additions=sum(f['additions'] for f in formatted_files),
+            total_deletions=sum(f['deletions'] for f in formatted_files),
+        )
+        
+        return formatted_files
+
+    @retry_on_rate_limit()
     async def get_file_content_from_pull_request(self, file_path: str, branch: str) -> str:
         """Get the content of a file from a specific branch (typically the PR's head branch)."""
         response = await self.client.rest.repos.async_get_content(
