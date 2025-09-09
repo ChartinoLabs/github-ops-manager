@@ -135,8 +135,19 @@ class UserRepositoryDiscoverer:
         query = f"author:{username} type:pr created:{start_date.date()}..{end_date.date()}"
         results = await self._search_issues(query)
         
+        logger.info(
+            f"Searching for authored PRs",
+            username=username,
+            query=query,
+            results_count=len(results)
+        )
+        
         repos = set()
         for item in results:
+            # Log the item structure to debug
+            if results and len(results) > 0 and len(repos) == 0:
+                logger.debug(f"Sample PR item keys: {list(item.keys())[:10] if isinstance(item, dict) else 'not a dict'}")
+            
             repo_name = self._extract_repo_from_url(item.get('repository_url', ''))
             if repo_name:
                 repos.add(repo_name)
@@ -196,7 +207,7 @@ class UserRepositoryDiscoverer:
         
         return repos
     
-    @retry_on_rate_limit
+    @retry_on_rate_limit()
     async def _search_issues(self, query: str, per_page: int = 100) -> List[Dict[str, Any]]:
         """Search issues/PRs using GitHub Search API.
         
@@ -216,7 +227,7 @@ class UserRepositoryDiscoverer:
         
         while True:
             try:
-                response = await self.client.rest.search.issues_and_pull_requests(
+                response = self.client.rest.search.issues_and_pull_requests(
                     q=query,
                     per_page=per_page,
                     page=page,
@@ -225,6 +236,14 @@ class UserRepositoryDiscoverer:
                 )
                 
                 items = response.parsed_data.items if hasattr(response.parsed_data, 'items') else []
+                
+                if page == 1:
+                    logger.info(
+                        f"Search API response",
+                        query=query,
+                        total_count=response.parsed_data.total_count if hasattr(response.parsed_data, 'total_count') else 0,
+                        items_on_page=len(items)
+                    )
                 
                 # Convert items to dict for easier processing
                 for item in items:
@@ -276,7 +295,7 @@ class UserRepositoryDiscoverer:
         
         return all_results
     
-    @retry_on_rate_limit
+    @retry_on_rate_limit()
     async def _search_commits(self, query: str, per_page: int = 100) -> List[Dict[str, Any]]:
         """Search commits using GitHub Search API.
         
@@ -290,7 +309,7 @@ class UserRepositoryDiscoverer:
         await self.rate_limiter.wait_if_needed()
         
         try:
-            response = await self.client.rest.search.commits(
+            response = self.client.rest.search.commits(
                 q=query,
                 per_page=per_page,
                 sort="committer-date",
