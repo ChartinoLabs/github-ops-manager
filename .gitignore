@@ -55,3 +55,7 @@ TECHNICAL_DESIGN.md
 # Environment variables
 .env*
 !.env.example
+
+# Development tools
+.claude/
+logs/
