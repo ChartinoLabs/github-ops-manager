@@ -270,9 +270,9 @@ class UserRepositoryDiscoverer:
                     # Rate limit hit - retry decorator should handle this
                     raise
                 elif e.response.status_code == 422:
-                    # Invalid query
-                    logger.error(
-                        "Invalid search query",
+                    # User doesn't exist on GitHub or no permission - this is normal for LDAP users
+                    logger.warning(
+                        "User not found on GitHub (normal for some LDAP users)",
                         query=query,
                         error=str(e)
                     )
