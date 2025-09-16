@@ -105,22 +105,30 @@ class UserRepositoryDiscoverer:
         
         # 4. Search for commits (if API allows)
         try:
+            logger.info(f"Attempting commit search for {username}")
             commit_repos = await self._discover_from_commits(username, start_date, end_date)
             repositories.update(commit_repos)
-            logger.debug(f"Found {len(commit_repos)} repos from commits", username=username, count=len(commit_repos))
+            logger.info(
+                f"Found {len(commit_repos)} repos from commits",
+                username=username, 
+                count=len(commit_repos),
+                commit_repos=list(commit_repos)[:20]  # Show first 20 for debugging
+            )
         except Exception as e:
             # Commit search might not be available or might fail
             logger.warning(
                 "Could not search commits for user",
                 username=username,
-                error=str(e)
+                error=str(e),
+                error_type=type(e).__name__
             )
         
         logger.info(
             "Repository discovery complete for user",
             username=username,
             total_repos=len(repositories),
-            date_range=f"{start_date.date()} to {end_date.date()}"
+            date_range=f"{start_date.date()} to {end_date.date()}",
+            discovered_repos=sorted(list(repositories))  # Show all discovered repos
         )
         
         return repositories
