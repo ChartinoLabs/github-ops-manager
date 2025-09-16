@@ -817,6 +817,69 @@ class GitHubKitAdapter(GitHubClientBase):
         return all_repos
 
     @retry_on_rate_limit()
+    async def list_branches(
+        self,
+        protected: bool | None = None,
+        per_page: int = 100,
+        **kwargs: Any
+    ) -> list[dict[str, Any]]:
+        """List branches for the repository.
+        
+        Args:
+            protected: If True, only protected branches. If False, only unprotected.
+            per_page: Number of branches per page (max 100)
+            **kwargs: Additional parameters for the API
+            
+        Returns:
+            List of branch dictionaries with name, commit SHA, and protection status
+        """
+        logger.debug(
+            "Listing branches",
+            owner=self.owner,
+            repo=self.repo_name,
+            protected=protected,
+        )
+        
+        all_branches = []
+        page = 1
+        
+        while True:
+            response = self.client.rest.repos.list_branches(
+                owner=self.owner,
+                repo=self.repo_name,
+                protected=protected,
+                per_page=per_page,
+                page=page,
+                **kwargs
+            )
+            
+            branches = response.parsed_data
+            if not branches:
+                break
+                
+            for branch in branches:
+                all_branches.append({
+                    'name': branch.name,
+                    'commit': {'sha': branch.commit.sha} if branch.commit else None,
+                    'protected': branch.protected if hasattr(branch, 'protected') else None,
+                })
+            
+            # GitHub returns less than per_page when no more results
+            if len(branches) < per_page:
+                break
+                
+            page += 1
+            
+        logger.debug(
+            "Retrieved branches",
+            owner=self.owner,
+            repo=self.repo_name,
+            branch_count=len(all_branches),
+        )
+        
+        return all_branches
+    
+    @retry_on_rate_limit()
     async def list_commits(
         self, 
         sha: str | None = None,
