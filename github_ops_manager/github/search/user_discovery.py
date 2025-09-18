@@ -14,6 +14,11 @@ from github_ops_manager.utils.retry import retry_on_rate_limit
 logger = structlog.get_logger(__name__)
 
 
+class UserNotFoundException(Exception):
+    """Exception raised when a user is not found on GitHub."""
+    pass
+
+
 class SearchRateLimiter:
     """Handle Search API's stricter rate limits (30 requests per minute)."""
     
@@ -88,40 +93,53 @@ class UserRepositoryDiscoverer:
             end_date=end_date.date().isoformat()
         )
         
-        # 1. Search for PRs authored by user
-        pr_repos = await self._discover_from_authored_prs(username, start_date, end_date)
-        repositories.update(pr_repos)
-        logger.debug(f"Found {len(pr_repos)} repos from authored PRs", username=username, count=len(pr_repos))
-        
-        # 2. Search for PRs reviewed by user
-        review_repos = await self._discover_from_reviewed_prs(username, start_date, end_date)
-        repositories.update(review_repos)
-        logger.debug(f"Found {len(review_repos)} repos from reviewed PRs", username=username, count=len(review_repos))
-        
-        # 3. Search for issues (including CXTM)
-        issue_repos = await self._discover_from_issues(username, start_date, end_date)
-        repositories.update(issue_repos)
-        logger.debug(f"Found {len(issue_repos)} repos from issues", username=username, count=len(issue_repos))
-        
-        # 4. Search for commits (if API allows)
         try:
-            logger.info(f"Attempting commit search for {username}")
-            commit_repos = await self._discover_from_commits(username, start_date, end_date)
-            repositories.update(commit_repos)
+            # 1. Search for PRs authored by user
+            pr_repos = await self._discover_from_authored_prs(username, start_date, end_date)
+            repositories.update(pr_repos)
+            logger.debug(f"Found {len(pr_repos)} repos from authored PRs", username=username, count=len(pr_repos))
+            
+            # 2. Search for PRs reviewed by user
+            review_repos = await self._discover_from_reviewed_prs(username, start_date, end_date)
+            repositories.update(review_repos)
+            logger.debug(f"Found {len(review_repos)} repos from reviewed PRs", username=username, count=len(review_repos))
+            
+            # 3. Search for issues (including CXTM)
+            issue_repos = await self._discover_from_issues(username, start_date, end_date)
+            repositories.update(issue_repos)
+            logger.debug(f"Found {len(issue_repos)} repos from issues", username=username, count=len(issue_repos))
+            
+            # 4. Search for commits (if API allows)
+            try:
+                logger.info(f"Attempting commit search for {username}")
+                commit_repos = await self._discover_from_commits(username, start_date, end_date)
+                repositories.update(commit_repos)
+                logger.info(
+                    f"Found {len(commit_repos)} repos from commits",
+                    username=username, 
+                    count=len(commit_repos),
+                    commit_repos=list(commit_repos)[:20]  # Show first 20 for debugging
+                )
+            except UserNotFoundException:
+                # Re-raise UserNotFoundException from commit search
+                raise
+            except Exception as e:
+                # Other commit search errors (not user-not-found) can be ignored
+                logger.warning(
+                    "Could not search commits for user",
+                    username=username,
+                    error=str(e),
+                    error_type=type(e).__name__
+                )
+        
+        except UserNotFoundException as e:
+            # User doesn't exist on GitHub - return empty set immediately
             logger.info(
-                f"Found {len(commit_repos)} repos from commits",
-                username=username, 
-                count=len(commit_repos),
-                commit_repos=list(commit_repos)[:20]  # Show first 20 for debugging
-            )
-        except Exception as e:
-            # Commit search might not be available or might fail
-            logger.warning(
-                "Could not search commits for user",
+                "User not found on GitHub, skipping all repository discovery",
                 username=username,
-                error=str(e),
-                error_type=type(e).__name__
+                error=str(e)
             )
+            return set()
         
         logger.info(
             "Repository discovery complete for user",
@@ -284,7 +302,10 @@ class UserRepositoryDiscoverer:
                         query=query,
                         error=str(e)
                     )
-                    break
+                    # Extract username from query for the exception message
+                    username = query.split('author:')[1].split()[0] if 'author:' in query else \
+                               query.split('reviewed-by:')[1].split()[0] if 'reviewed-by:' in query else 'unknown'
+                    raise UserNotFoundException(f"User '{username}' not found on GitHub (422 error)")
                 else:
                     logger.error(
                         "Search API error",
@@ -335,13 +356,15 @@ class UserRepositoryDiscoverer:
             
         except RequestFailed as e:
             if e.response.status_code == 422:
-                # Commit search might not be available
+                # Commit search might not be available or user doesn't exist
                 logger.warning(
                     "Commit search not available or invalid query",
                     query=query,
                     error=str(e)
                 )
-                return []
+                # Extract username from query for the exception message
+                username = query.split('author:')[1].split()[0] if 'author:' in query else 'unknown'
+                raise UserNotFoundException(f"User '{username}' not found on GitHub (422 error in commit search)")
             raise
         except Exception as e:
             logger.error(
