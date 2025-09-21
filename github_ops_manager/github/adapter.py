@@ -718,23 +718,79 @@ class GitHubKitAdapter(GitHubClientBase):
             commit_sha=commit_sha
         )
         
-        response = await self.client.rest.repos.async_get_commit(
-            owner=self.owner, 
-            repo=self.repo_name, 
-            ref=commit_sha
-        )
-        commit_data = response.json()
+        # TODO: remove after shooting commit counting issue
+        try:
+            response = await self.client.rest.repos.async_get_commit(
+                owner=self.owner,
+                repo=self.repo_name,
+                ref=commit_sha
+            )
+            commit_data = response.json()
+
+            logger.debug(
+                "GitHub API response received",
+                owner=self.owner,
+                repo=self.repo_name,
+                commit_sha=commit_sha,
+                response_type=type(commit_data).__name__,
+                has_stats=bool(commit_data.get('stats')) if isinstance(commit_data, dict) else False,
+                has_files=bool(commit_data.get('files')) if isinstance(commit_data, dict) else False,
+                response_keys=list(commit_data.keys()) if isinstance(commit_data, dict) else "Not a dict",
+            )
+
+        except Exception as e:
+            logger.error(
+                "Failed to fetch commit from GitHub API",
+                owner=self.owner,
+                repo=self.repo_name,
+                commit_sha=commit_sha,
+                error=str(e),
+                error_type=type(e).__name__,
+            )
+            # Return empty stats on API failure
+            return {
+                'additions': 0,
+                'deletions': 0,
+                'total': 0,
+                'files': []
+            }
+        # TODO: remove after shooting commit counting issue
         
         # Extract statistics from the commit data
         stats = commit_data.get('stats', {})
         files = commit_data.get('files', [])
         
+        # TODO: remove after shooting commit counting issue
+        logger.debug(
+            "Extracting commit statistics",
+            owner=self.owner,
+            repo=self.repo_name,
+            commit_sha=commit_sha,
+            stats_type=type(stats).__name__,
+            stats_content=stats if isinstance(stats, dict) else str(stats)[:100],
+            files_count=len(files) if isinstance(files, list) else "Not a list",
+            files_type=type(files).__name__,
+        )
+        # TODO: remove after shooting commit counting issue
+
         result = {
             'additions': stats.get('additions', 0),
             'deletions': stats.get('deletions', 0),
             'total': stats.get('total', 0),
-            'files': [f.get('filename', '') for f in files if f.get('filename')]
+            'files': files  # Return the full file objects, not just filenames
         }
+
+        # TODO: remove after shooting commit counting issue
+        logger.debug(
+            "Final commit stats result",
+            owner=self.owner,
+            repo=self.repo_name,
+            commit_sha=commit_sha,
+            result_type=type(result).__name__,
+            result_keys=list(result.keys()),
+            files_in_result=len(result['files']) if isinstance(result['files'], list) else "Not a list",
+        )
+        # TODO: remove after shooting commit counting issue
         
         logger.debug(
             "Retrieved commit statistics",
