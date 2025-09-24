@@ -496,22 +496,22 @@ class GitHubKitAdapter(GitHubClientBase):
     @handle_github_422
     async def get_pull_request_files_with_stats(self, pr_number: int) -> list[dict[str, Any]]:
         """Get PR files with detailed statistics.
-        
+
         This method enhances the basic file listing by ensuring consistent
         statistics are available and properly formatted for all files.
-        
+
         Args:
             pr_number: Pull request number
-            
+
         Returns:
             List of dictionaries with consistent file statistics:
             - filename: Name of the changed file
             - additions: Number of lines added (guaranteed integer)
-            - deletions: Number of lines deleted (guaranteed integer) 
+            - deletions: Number of lines deleted (guaranteed integer)
             - changes: Total changes (additions + deletions)
             - status: File change status (added, modified, deleted, etc.)
             - patch: Optional diff patch content
-            
+
         Example:
             files = await adapter.get_pull_request_files_with_stats(123)
             for file in files:
@@ -523,37 +523,37 @@ class GitHubKitAdapter(GitHubClientBase):
             repo=self.repo_name,
             pr_number=pr_number,
         )
-        
+
         # Use existing method to get raw file data
         files = await self.list_files_in_pull_request(pr_number)
-        
+
         # Format with consistent structure and guaranteed statistics
         formatted_files = []
         for file_data in files:
             # Extract statistics with safe defaults
-            additions = getattr(file_data, 'additions', 0) or 0
-            deletions = getattr(file_data, 'deletions', 0) or 0
-            
+            additions = getattr(file_data, "additions", 0) or 0
+            deletions = getattr(file_data, "deletions", 0) or 0
+
             formatted_file = {
-                'filename': getattr(file_data, 'filename', ''),
-                'additions': additions,
-                'deletions': deletions,
-                'changes': additions + deletions,
-                'status': getattr(file_data, 'status', 'unknown'),
-                'patch': getattr(file_data, 'patch', None),
+                "filename": getattr(file_data, "filename", ""),
+                "additions": additions,
+                "deletions": deletions,
+                "changes": additions + deletions,
+                "status": getattr(file_data, "status", "unknown"),
+                "patch": getattr(file_data, "patch", None),
             }
             formatted_files.append(formatted_file)
-        
+
         logger.debug(
             "Enhanced PR file statistics processed",
             owner=self.owner,
             repo=self.repo_name,
             pr_number=pr_number,
             file_count=len(formatted_files),
-            total_additions=sum(f['additions'] for f in formatted_files),
-            total_deletions=sum(f['deletions'] for f in formatted_files),
+            total_additions=sum(f["additions"] for f in formatted_files),
+            total_deletions=sum(f["deletions"] for f in formatted_files),
         )
-        
+
         return formatted_files
 
     @retry_on_rate_limit()
@@ -694,37 +694,28 @@ class GitHubKitAdapter(GitHubClientBase):
     @handle_github_422
     async def get_commit_stats(self, commit_sha: str) -> dict[str, Any]:
         """Get detailed statistics for a specific commit.
-        
+
         Args:
             commit_sha: The SHA of the commit to get statistics for
-            
+
         Returns:
             Dictionary containing commit statistics with keys:
             - additions: Number of lines added
-            - deletions: Number of lines deleted  
+            - deletions: Number of lines deleted
             - total: Total lines changed (additions + deletions)
             - files: List of filenames that were changed
-            
+
         Example:
             stats = await client.get_commit_stats("abc123...")
             print(f"Lines added: {stats['additions']}")
             print(f"Lines deleted: {stats['deletions']}")
             print(f"Files changed: {len(stats['files'])}")
         """
-        logger.debug(
-            "Fetching commit statistics",
-            owner=self.owner,
-            repo=self.repo_name,
-            commit_sha=commit_sha
-        )
-        
+        logger.debug("Fetching commit statistics", owner=self.owner, repo=self.repo_name, commit_sha=commit_sha)
+
         # TODO: remove after shooting commit counting issue
         try:
-            response = await self.client.rest.repos.async_get_commit(
-                owner=self.owner,
-                repo=self.repo_name,
-                ref=commit_sha
-            )
+            response = await self.client.rest.repos.async_get_commit(owner=self.owner, repo=self.repo_name, ref=commit_sha)
             commit_data = response.json()
 
             logger.debug(
@@ -733,8 +724,8 @@ class GitHubKitAdapter(GitHubClientBase):
                 repo=self.repo_name,
                 commit_sha=commit_sha,
                 response_type=type(commit_data).__name__,
-                has_stats=bool(commit_data.get('stats')) if isinstance(commit_data, dict) else False,
-                has_files=bool(commit_data.get('files')) if isinstance(commit_data, dict) else False,
+                has_stats=bool(commit_data.get("stats")) if isinstance(commit_data, dict) else False,
+                has_files=bool(commit_data.get("files")) if isinstance(commit_data, dict) else False,
                 response_keys=list(commit_data.keys()) if isinstance(commit_data, dict) else "Not a dict",
             )
 
@@ -748,18 +739,13 @@ class GitHubKitAdapter(GitHubClientBase):
                 error_type=type(e).__name__,
             )
             # Return empty stats on API failure
-            return {
-                'additions': 0,
-                'deletions': 0,
-                'total': 0,
-                'files': []
-            }
+            return {"additions": 0, "deletions": 0, "total": 0, "files": []}
         # TODO: remove after shooting commit counting issue
-        
+
         # Extract statistics from the commit data
-        stats = commit_data.get('stats', {})
-        files = commit_data.get('files', [])
-        
+        stats = commit_data.get("stats", {})
+        files = commit_data.get("files", [])
+
         # TODO: remove after shooting commit counting issue
         logger.debug(
             "Extracting commit statistics",
@@ -774,10 +760,10 @@ class GitHubKitAdapter(GitHubClientBase):
         # TODO: remove after shooting commit counting issue
 
         result = {
-            'additions': stats.get('additions', 0),
-            'deletions': stats.get('deletions', 0),
-            'total': stats.get('total', 0),
-            'files': files  # Return the full file objects, not just filenames
+            "additions": stats.get("additions", 0),
+            "deletions": stats.get("deletions", 0),
+            "total": stats.get("total", 0),
+            "files": files,  # Return the full file objects, not just filenames
         }
 
         # TODO: remove after shooting commit counting issue
@@ -788,27 +774,27 @@ class GitHubKitAdapter(GitHubClientBase):
             commit_sha=commit_sha,
             result_type=type(result).__name__,
             result_keys=list(result.keys()),
-            files_in_result=len(result['files']) if isinstance(result['files'], list) else "Not a list",
+            files_in_result=len(result["files"]) if isinstance(result["files"], list) else "Not a list",
         )
         # TODO: remove after shooting commit counting issue
-        
+
         logger.debug(
             "Retrieved commit statistics",
             owner=self.owner,
             repo=self.repo_name,
             commit_sha=commit_sha,
-            additions=result['additions'],
-            deletions=result['deletions'],
-            files_changed=len(result['files'])
+            additions=result["additions"],
+            deletions=result["deletions"],
+            files_changed=len(result["files"]),
         )
-        
+
         return result
 
     # Organization Operations
     @retry_on_rate_limit()
     async def list_organization_repositories(self, org_name: str, per_page: int = 100, **kwargs: Any) -> list[FullRepository]:
         """List all repositories for an organization, handling pagination.
-        
+
         Args:
             org_name: Name of the GitHub organization
             per_page: Number of repositories per page (default: 100, max: 100)
@@ -816,10 +802,10 @@ class GitHubKitAdapter(GitHubClientBase):
                 - type: Filter by repository type ('all', 'public', 'private', 'forks', 'sources', 'member')
                 - sort: Sort repositories ('created', 'updated', 'pushed', 'full_name')
                 - direction: Sort direction ('asc' or 'desc')
-                
+
         Returns:
             List of all repositories in the organization
-            
+
         Example:
             repos = await client.list_organization_repositories(
                 "my-org",
@@ -829,63 +815,46 @@ class GitHubKitAdapter(GitHubClientBase):
             )
         """
         from github_ops_manager.utils.retry import retry_on_rate_limit
-        
+
         @retry_on_rate_limit()
         async def _fetch_page(page: int) -> list[FullRepository]:
             response: Response[list[FullRepository]] = await self.client.rest.repos.async_list_for_org(
-                org=org_name,
-                per_page=per_page,
-                page=page,
-                **kwargs
+                org=org_name, per_page=per_page, page=page, **kwargs
             )
             return response.parsed_data
-        
+
         all_repos: list[FullRepository] = []
         page: int = 1
-        
-        logger.info(
-            "Fetching repositories for organization",
-            org=org_name,
-            per_page=per_page,
-            filters=kwargs
-        )
-        
+
+        logger.info("Fetching repositories for organization", org=org_name, per_page=per_page, filters=kwargs)
+
         while True:
             logger.debug(f"Fetching organization repositories page {page}")
             repos: list[FullRepository] = await _fetch_page(page)
-            
+
             if not repos:
                 break
-                
+
             all_repos.extend(repos)
-            
+
             if len(repos) < per_page:
                 break
-                
+
             page += 1
-            
-        logger.info(
-            "Fetched all repositories for organization",
-            org=org_name,
-            total_repos=len(all_repos)
-        )
-        
+
+        logger.info("Fetched all repositories for organization", org=org_name, total_repos=len(all_repos))
+
         return all_repos
 
     @retry_on_rate_limit()
-    async def list_branches(
-        self,
-        protected: bool | None = None,
-        per_page: int = 100,
-        **kwargs: Any
-    ) -> list[dict[str, Any]]:
+    async def list_branches(self, protected: bool | None = None, per_page: int = 100, **kwargs: Any) -> list[dict[str, Any]]:
         """List branches for the repository.
-        
+
         Args:
             protected: If True, only protected branches. If False, only unprotected.
             per_page: Number of branches per page (max 100)
             **kwargs: Additional parameters for the API
-            
+
         Returns:
             List of branch dictionaries with name, commit SHA, and protection status
         """
@@ -895,49 +864,46 @@ class GitHubKitAdapter(GitHubClientBase):
             repo=self.repo_name,
             protected=protected,
         )
-        
+
         all_branches = []
         page = 1
-        
+
         while True:
             response = self.client.rest.repos.list_branches(
-                owner=self.owner,
-                repo=self.repo_name,
-                protected=protected,
-                per_page=per_page,
-                page=page,
-                **kwargs
+                owner=self.owner, repo=self.repo_name, protected=protected, per_page=per_page, page=page, **kwargs
             )
-            
+
             branches = response.parsed_data
             if not branches:
                 break
-                
+
             for branch in branches:
-                all_branches.append({
-                    'name': branch.name,
-                    'commit': {'sha': branch.commit.sha} if branch.commit else None,
-                    'protected': branch.protected if hasattr(branch, 'protected') else None,
-                })
-            
+                all_branches.append(
+                    {
+                        "name": branch.name,
+                        "commit": {"sha": branch.commit.sha} if branch.commit else None,
+                        "protected": branch.protected if hasattr(branch, "protected") else None,
+                    }
+                )
+
             # GitHub returns less than per_page when no more results
             if len(branches) < per_page:
                 break
-                
+
             page += 1
-            
+
         logger.debug(
             "Retrieved branches",
             owner=self.owner,
             repo=self.repo_name,
             branch_count=len(all_branches),
         )
-        
+
         return all_branches
-    
+
     @retry_on_rate_limit()
     async def list_commits(
-        self, 
+        self,
         sha: str | None = None,
         path: str | None = None,
         author: str | None = None,
@@ -945,10 +911,10 @@ class GitHubKitAdapter(GitHubClientBase):
         since: str | None = None,
         until: str | None = None,
         per_page: int = 100,
-        **kwargs: Any
+        **kwargs: Any,
     ) -> list[dict[str, Any]]:
         """List commits for the repository with optional filters, handling pagination.
-        
+
         Args:
             sha: SHA or branch to start listing commits from (default: default branch)
             path: Only commits containing this file path will be returned
@@ -958,10 +924,10 @@ class GitHubKitAdapter(GitHubClientBase):
             until: ISO 8601 date string - only commits before this date
             per_page: Number of commits per page (default: 100, max: 100)
             **kwargs: Additional parameters to pass to the API
-            
+
         Returns:
             List of commit dictionaries with full statistics
-            
+
         Example:
             # Get all commits by a specific author in the last week
             from datetime import datetime, timedelta
@@ -972,31 +938,19 @@ class GitHubKitAdapter(GitHubClientBase):
             )
         """
         from github_ops_manager.utils.retry import retry_on_rate_limit
-        
+
         @retry_on_rate_limit()
         async def _fetch_page(page: int) -> list[dict[str, Any]]:
             params = self._omit_null_parameters(
-                sha=sha,
-                path=path,
-                author=author,
-                committer=committer,
-                since=since,
-                until=until,
-                per_page=per_page,
-                page=page,
-                **kwargs
+                sha=sha, path=path, author=author, committer=committer, since=since, until=until, per_page=per_page, page=page, **kwargs
             )
-            response = await self.client.rest.repos.async_list_commits(
-                owner=self.owner,
-                repo=self.repo_name,
-                **params
-            )
+            response = await self.client.rest.repos.async_list_commits(owner=self.owner, repo=self.repo_name, **params)
             # Return raw JSON to include stats
             return response.json()
-        
+
         all_commits: list[dict[str, Any]] = []
         page: int = 1
-        
+
         logger.info(
             "Fetching commits for repository",
             owner=self.owner,
@@ -1007,93 +961,74 @@ class GitHubKitAdapter(GitHubClientBase):
                 "author": author,
                 "since": since,
                 "until": until,
-            }
+            },
         )
-        
+
         while True:
             logger.debug(f"Fetching commits page {page}")
             commits: list[dict[str, Any]] = await _fetch_page(page)
-            
+
             if not commits:
                 break
-                
+
             all_commits.extend(commits)
-            
+
             if len(commits) < per_page:
                 break
-                
+
             page += 1
-            
-        logger.info(
-            "Fetched all commits",
-            owner=self.owner,
-            repo=self.repo_name,
-            total_commits=len(all_commits)
-        )
-        
+
+        logger.info("Fetched all commits", owner=self.owner, repo=self.repo_name, total_commits=len(all_commits))
+
         return all_commits
 
     @retry_on_rate_limit()
     async def list_pull_request_reviews(self, pull_number: int, per_page: int = 100, **kwargs: Any) -> list[Any]:
         """List all reviews for a pull request, handling pagination.
-        
+
         Args:
             pull_number: The pull request number
             per_page: Number of reviews per page (default: 100, max: 100)
             **kwargs: Additional parameters to pass to the API
-            
+
         Returns:
             List of review objects
-            
+
         Example:
             reviews = await client.list_pull_request_reviews(123)
             for review in reviews:
                 print(f"{review.user.login}: {review.state}")
         """
         from github_ops_manager.utils.retry import retry_on_rate_limit
-        
+
         @retry_on_rate_limit()
         async def _fetch_page(page: int) -> list[Any]:
             response = await self.client.rest.pulls.async_list_reviews(
-                owner=self.owner,
-                repo=self.repo_name,
-                pull_number=pull_number,
-                per_page=per_page,
-                page=page,
-                **kwargs
+                owner=self.owner, repo=self.repo_name, pull_number=pull_number, per_page=per_page, page=page, **kwargs
             )
             return response.parsed_data
-        
+
         all_reviews: list[Any] = []
         page: int = 1
-        
-        logger.info(
-            "Fetching reviews for pull request",
-            owner=self.owner,
-            repo=self.repo_name,
-            pull_number=pull_number
-        )
-        
+
+        logger.info("Fetching reviews for pull request", owner=self.owner, repo=self.repo_name, pull_number=pull_number)
+
         while True:
             logger.debug(f"Fetching PR reviews page {page}")
             reviews: list[Any] = await _fetch_page(page)
-            
+
             if not reviews:
                 break
-                
+
             all_reviews.extend(reviews)
-            
+
             if len(reviews) < per_page:
                 break
-                
+
             page += 1
-            
+
         logger.info(
-            "Fetched all reviews for pull request",
-            owner=self.owner,
-            repo=self.repo_name,
-            pull_number=pull_number,
-            total_reviews=len(all_reviews)
+            "Fetched all reviews for pull request", owner=self.owner, repo=self.repo_name, pull_number=pull_number, total_reviews=len(all_reviews)
         )
-        
+
         return all_reviews
