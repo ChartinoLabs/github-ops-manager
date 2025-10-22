@@ -81,6 +81,7 @@ async def get_desired_pull_request_file_content(base_directory: Path, desired_is
     files: list[tuple[str, str]] = []
     for file in desired_issue.pull_request.files:
         file_path = base_directory / file
+        logger.info("Checking if file exists", file=file, file_path=file_path, base_directory=base_directory)
         if file_path.exists():
             files.append((file, file_path.read_text(encoding="utf-8")))
         else:
