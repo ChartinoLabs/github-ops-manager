@@ -361,6 +361,10 @@ def sync_new_files_cli(
         typer.echo("No new (untracked) files found.")
         return
 
+    typer.echo(f"{len(new_files)} new files found")
+    for file in new_files:
+        typer.echo(f"  - {file}")
+
     # 2. Load and validate the issues file
     processor = YAMLProcessor()
     try:

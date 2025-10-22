@@ -112,6 +112,7 @@ async def run_process_issues_workflow(
     # Identify directory that YAML file is in. All files attached to pull
     # requests will be relative to this directory.
     yaml_dir = yaml_path.parent
+    logger.info("YAML directory where pull request files are relative to", yaml_dir=str(yaml_dir), original_yaml_path=str(yaml_path))
 
     start_time = time.time()
     logger.info("Processing pull requests", start_time=start_time)
