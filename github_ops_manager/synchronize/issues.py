@@ -31,6 +31,58 @@ async def decide_github_issue_label_sync_action(desired_label: str, github_issue
     return SyncDecision.UPDATE
 
 
+async def process_tac_attachments(issue: IssueModel, issue_number: int, github_adapter: GitHubKitAdapter) -> None:
+    """Process and upload large TAC outputs as attachments.
+
+    This function handles uploading command_output and parsed_output content that exceeds
+    TAC_MAX_INLINE_OUTPUT_SIZE as GitHub issue attachments. Content is retrieved from the
+    original issue data (before it was removed during template rendering).
+
+    Args:
+        issue: The issue model with original TAC data preserved in _original_commands_data
+        issue_number: GitHub issue number to attach files to
+        github_adapter: GitHub adapter for uploads
+    """
+    from github_ops_manager.utils.attachments import process_large_content_for_attachment
+
+    # Check if this is a TAC issue with preserved original commands data
+    if not hasattr(issue, "_original_commands_data"):
+        return
+
+    logger.info("Processing TAC attachments for issue", issue_number=issue_number, issue_title=issue.title)
+
+    # Access the ORIGINAL data (before template rendering removed large content)
+    for command_data in issue._original_commands_data:  # type: ignore
+        command = command_data.get("command", "unknown")
+
+        # Process command_output if it exists
+        if command_data.get("command_output"):
+            await process_large_content_for_attachment(
+                content=command_data["command_output"],
+                filename=f"{command}_output.txt",
+                github_adapter=github_adapter,
+                issue_number=issue_number,
+            )
+
+        # Process parsed_output if it exists
+        if command_data.get("parsed_output"):
+            # Determine file extension based on parser type
+            parser_used = command_data.get("parser_used", "")
+            if parser_used in ["Genie", "NXOSJSON"]:
+                extension = "json"
+            elif parser_used == "YamlPathParse":
+                extension = "yaml"
+            else:
+                extension = "json"  # Default for Regex and others
+
+            await process_large_content_for_attachment(
+                content=command_data["parsed_output"],
+                filename=f"{command}_parsed.{extension}",
+                github_adapter=github_adapter,
+                issue_number=issue_number,
+            )
+
+
 async def decide_github_issue_sync_action(desired_issue: IssueModel, github_issue: Issue | None = None) -> SyncDecision:
     """Compare a YAML issue and a GitHub issue, and decide whether to create, update, or no-op.
 
@@ -105,6 +157,10 @@ async def sync_github_issues(desired_issues: list[IssueModel], github_adapter: G
                 assignees=desired_issue.assignees,
                 milestone=desired_issue.milestone,
             )
+
+            # Process attachments for TAC issues after issue creation
+            await process_tac_attachments(desired_issue, github_issue.number, github_adapter)
+
             number_of_created_github_issues += 1
             results.append(IssueSynchronizationResult(desired_issue, github_issue, decision))
         elif decision == SyncDecision.UPDATE:
@@ -132,7 +188,15 @@ async def render_issue_bodies(issues_yaml_model: IssuesYAMLModel) -> IssuesYAMLM
     """Render issue bodies using a provided Jinja2 template.
 
     This coroutine mutates the input object and returns it.
+
+    For Testing as Code issues, large command outputs and parsed data that exceed
+    TAC_MAX_INLINE_OUTPUT_SIZE will be removed before rendering. The original content
+    is preserved in a separate attribute for later attachment upload.
     """
+    from copy import deepcopy
+
+    from github_ops_manager.utils.constants import TAC_MAX_INLINE_OUTPUT_SIZE
+
     logger.info("Rendering issue bodies using template", template_path=issues_yaml_model.issue_template)
     try:
         template = construct_jinja2_template_from_file(issues_yaml_model.issue_template)
@@ -142,7 +206,37 @@ async def render_issue_bodies(issues_yaml_model: IssuesYAMLModel) -> IssuesYAMLM
 
     for issue in issues_yaml_model.issues:
         if issue.data is not None:
-            # Render with all issue fields available
+            # Preserve original data for attachment processing
+            if "commands" in issue.data:
+                # Store original commands data before modification
+                if not hasattr(issue, "_original_commands_data"):
+                    issue._original_commands_data = deepcopy(issue.data["commands"])  # type: ignore
+
+                # Remove large content from TAC issues before template rendering
+                for command_data in issue.data["commands"]:
+                    # Remove command_output if too large
+                    if command_data.get("command_output") and len(command_data["command_output"]) > TAC_MAX_INLINE_OUTPUT_SIZE:
+                        logger.info(
+                            "Removing large command_output from template context",
+                            issue_title=issue.title,
+                            command=command_data.get("command"),
+                            content_size=len(command_data["command_output"]),
+                            threshold=TAC_MAX_INLINE_OUTPUT_SIZE,
+                        )
+                        command_data["command_output"] = None
+
+                    # Remove parsed_output if too large
+                    if command_data.get("parsed_output") and len(command_data["parsed_output"]) > TAC_MAX_INLINE_OUTPUT_SIZE:
+                        logger.info(
+                            "Removing large parsed_output from template context",
+                            issue_title=issue.title,
+                            command=command_data.get("command"),
+                            content_size=len(command_data["parsed_output"]),
+                            threshold=TAC_MAX_INLINE_OUTPUT_SIZE,
+                        )
+                        command_data["parsed_output"] = None
+
+            # Render with modified data (large content removed)
             render_context = issue.model_dump()
             try:
                 issue.body = template.render(**render_context)

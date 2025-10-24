@@ -165,3 +165,23 @@ class GitHubClientBase(ABC):
     async def get_commit(self, commit_sha: str) -> dict[str, Any]:
         """Get detailed information about a specific commit, including full message body."""
         pass
+
+    # Issue Attachment Operations
+    @abstractmethod
+    async def upload_issue_attachment(
+        self,
+        issue_number: int,
+        content: str,
+        filename: str,
+    ) -> str:
+        """Upload content as a GitHub issue attachment and return the CDN URL.
+
+        Args:
+            issue_number: The issue number to attach the file to
+            content: The file content to upload
+            filename: Filename for the attachment
+
+        Returns:
+            URL to the uploaded attachment on GitHub's CDN
+        """
+        pass

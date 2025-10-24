@@ -6,18 +6,22 @@
 Sample output of `{{ command_data.command }}`:
 
 {% if command_data.parser_used != "YamlPathParse" %}
+{% if command_data.command_output %}
 ```cli
 {{ command_data.command_output }}
 ```
+{% endif %}
 {% endif %}
 {% if command_data.parser_used=="Genie"%}
 
 A Genie Parser exists for this show command, and results in data like so:
 You MUST use a Genie Parser for this `{{ command_data.command }}` command. Pay attention to the Parsing Requirements.
 
+{% if command_data.parsed_output %}
 ```json
 {{ command_data.parsed_output }}
 ```
+{% endif %}
 
 {% endif %}
 {%if command_data.parser_used=="YamlPathParse"%}
@@ -25,17 +29,21 @@ The data for the command or API call `{{ command_data.command }}` is already in 
 
 You MUST use YamlPath Parse keyword for this `{{ command_data.command }}` command or API call. Pay attention to the Parsing Requirements.
 
+{% if command_data.parsed_output %}
 ```yaml
 {{ command_data.parsed_output }}
 ```
+{% endif %}
 
 {% endif %}
 {% if command_data.parser_used=="NXOSJSON"%}
 Run the command as | json-pretty native (for example: show ip interface brief | json-pretty native), with a resulting JSON body like so:
 
+{% if command_data.parsed_output %}
 ```json
 {{ command_data.parsed_output }}
 ```
+{% endif %}
 
 {% endif %}
 {% if command_data.parser_used in [None, '', 'Regex'] %}
@@ -53,14 +61,11 @@ You MUST use a RegEx Pattern (and Robot's Get Regexp Matches keyword) for this `
 
 Mocked Regex Data:
 
-```json
 {% if command_data.parsed_output %}
+```json
 {{ command_data.parsed_output }}
-{% else %}
-
-
-{% endif %}
 ```
+{% endif %}
 {% endif %}
 {% endfor %}
 

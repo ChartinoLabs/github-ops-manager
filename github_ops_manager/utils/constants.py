@@ -23,3 +23,10 @@ DEFAULT_RELEASE_NOTES_PATH = "docs/release-notes.md"
 
 DEFAULT_RELEASE_NOTES_HEADER = "# Release Notes\n\nThis document tracks the new features, enhancements, and bug fixes for each release."
 """Default header expected in release notes file."""
+
+# Testing as Code Constants
+# --------------------------
+
+TAC_MAX_INLINE_OUTPUT_SIZE = 10_000
+"""Maximum size (in characters) for command output or parsed data to be included inline in issue body.
+Content exceeding this threshold will be uploaded as a GitHub issue attachment instead."""

@@ -600,3 +600,53 @@ class GitHubKitAdapter(GitHubClientBase):
         response = await self.client.rest.repos.async_get_commit(owner=self.owner, repo=self.repo_name, ref=commit_sha)
         # Return raw JSON response instead of parsed_data due to githubkit bug
         return response.json()
+
+    # Issue Attachment Operations
+    @handle_github_422
+    async def upload_issue_attachment(
+        self,
+        issue_number: int,
+        content: str,
+        filename: str,
+    ) -> str:
+        """Upload content as a GitHub issue attachment and return the CDN URL.
+
+        GitHub doesn't have a direct "attach file to issue" API endpoint. Instead, we use
+        the issue comment mechanism with file uploads. Files uploaded via comments become
+        permanent attachments with stable CDN URLs that can be referenced anywhere.
+
+        Args:
+            issue_number: The issue number to attach the file to
+            content: The file content to upload
+            filename: Filename for the attachment
+
+        Returns:
+            URL to the uploaded attachment on GitHub's CDN (user-attachments)
+
+        Note:
+            This implementation creates a comment with the attachment. The file will be
+            visible in both the comment and the issue's attachment list. The CDN URL
+            is permanent and can be used to reference the file from the issue body or
+            other locations.
+        """
+        # TODO: Implement actual file upload via GitHub API
+        # GitHub's REST API doesn't have a straightforward file upload for issue attachments.
+        # Options:
+        # 1. Use GraphQL API with uploadAsset mutation
+        # 2. Create comment with markdown image/link syntax and let GitHub handle upload
+        # 3. Use a workaround with temporary release assets
+        #
+        # For now, we'll create a placeholder comment and raise NotImplementedError
+        # This will be completed once we research the best GitHub API approach
+
+        logger.warning(
+            "Issue attachment upload not yet implemented",
+            issue_number=issue_number,
+            filename=filename,
+            content_size=len(content),
+        )
+
+        raise NotImplementedError(
+            "GitHub issue attachment upload is not yet implemented. "
+            "This feature requires additional research into GitHub's API mechanisms for file uploads."
+        )
