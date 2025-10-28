@@ -144,7 +144,10 @@ def extract_os_from_robot_filename(filename: str) -> str | None:
 
 
 def find_test_cases_files(test_cases_dir: Path) -> list[Path]:
-    """Find all test_cases.yaml files in directory.
+    """Find all test_cases.yaml files in directory (non-recursive).
+
+    Only searches the immediate directory to avoid picking up backup files
+    in subdirectories like .backups/
 
     Args:
         test_cases_dir: Directory to search for test case files
@@ -156,8 +159,8 @@ def find_test_cases_files(test_cases_dir: Path) -> list[Path]:
         logger.error("Test cases directory does not exist", test_cases_dir=str(test_cases_dir))
         return []
 
-    # Look for .yaml and .yml files
-    yaml_files = list(test_cases_dir.glob("**/*.yaml")) + list(test_cases_dir.glob("**/*.yml"))
+    # Look for .yaml and .yml files in immediate directory only (non-recursive)
+    yaml_files = list(test_cases_dir.glob("*.yaml")) + list(test_cases_dir.glob("*.yml"))
 
     # Filter for files that likely contain test cases
     test_case_files = []
