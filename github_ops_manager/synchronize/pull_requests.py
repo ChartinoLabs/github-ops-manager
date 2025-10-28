@@ -406,27 +406,106 @@ async def sync_github_pull_requests(
     default_branch: str,
     base_directory: Path,
     testing_as_code_workflow: bool = False,
-    catalog_workflow: bool = False,
+    catalog_repo: str = "US-PS-SVS/catalog",
     catalog_repo_url: str | None = None,
     test_cases_dir: Path | None = None,
+    github_auth_type: str | None = None,
+    github_pat_token: str | None = None,
+    github_app_id: int | None = None,
+    github_app_private_key_path: Path | None = None,
+    github_app_installation_id: int | None = None,
+    github_api_url: str = "https://api.github.com",
 ) -> None:
     """Process pull requests for issues that specify a pull_request field.
 
+    Supports both project and catalog-destined PRs in the same run.
+    Issues with catalog_destined=true will have PRs created against the catalog repository.
+
     Args:
         desired_issues: List of desired issues from YAML
-        existing_issues: List of existing issues from GitHub
+        existing_issues: List of existing issues from GitHub (project repo)
         existing_pull_requests: List of existing pull requests from GitHub
-        github_adapter: GitHub adapter for API calls
+        github_adapter: GitHub adapter for project repository
         default_branch: Default branch name
         base_directory: Base directory where files are located
         testing_as_code_workflow: If True, augment PR bodies for Testing as Code
-        catalog_workflow: If True, enable catalog workflow features
-        catalog_repo_url: Full URL to catalog repository (required if catalog_workflow=True)
-        test_cases_dir: Directory containing test_cases.yaml files (required if catalog_workflow=True)
+        catalog_repo: Catalog repository name (owner/repo)
+        catalog_repo_url: Full URL to catalog repository for metadata writeback
+        test_cases_dir: Directory containing test_cases.yaml files for metadata writeback
+        github_auth_type: GitHub authentication type for creating catalog adapter
+        github_pat_token: GitHub PAT token for creating catalog adapter
+        github_app_id: GitHub App ID for creating catalog adapter
+        github_app_private_key_path: GitHub App private key path for creating catalog adapter
+        github_app_installation_id: GitHub App installation ID for creating catalog adapter
+        github_api_url: GitHub API URL for creating catalog adapter
     """
+    from github_ops_manager.configuration.models import GitHubAuthenticationType
+
     desired_issues_with_prs = [issue for issue in desired_issues if issue.pull_request is not None]
+
+    # Check if we have any catalog-destined issues
+    catalog_destined_issues = [issue for issue in desired_issues_with_prs if getattr(issue, "catalog_destined", False)]
+
+    catalog_adapter = None
+    catalog_issues = None
+    catalog_prs = None
+    catalog_default_branch = None
+
+    if catalog_destined_issues:
+        logger.info(
+            "Detected catalog-destined issues, creating catalog adapter",
+            catalog_count=len(catalog_destined_issues),
+            total_count=len(desired_issues_with_prs),
+            catalog_repo=catalog_repo,
+        )
+
+        # Create adapter for catalog repository
+        catalog_adapter = await GitHubKitAdapter.create(
+            repo=catalog_repo,
+            github_auth_type=GitHubAuthenticationType(github_auth_type) if github_auth_type else None,
+            github_pat_token=github_pat_token,
+            github_app_id=github_app_id,
+            github_app_private_key_path=github_app_private_key_path,
+            github_app_installation_id=github_app_installation_id,
+            github_api_url=github_api_url,
+        )
+
+        # Get catalog repository info
+        catalog_repo_info = await catalog_adapter.get_repository()
+        catalog_default_branch = catalog_repo_info.default_branch
+
+        # Fetch existing issues and PRs from catalog repository
+        catalog_issues = await catalog_adapter.list_issues()
+        catalog_simple_prs = await catalog_adapter.list_pull_requests()
+        catalog_prs = [await catalog_adapter.get_pull_request(pr.number) for pr in catalog_simple_prs]
+
+        logger.info(
+            "Fetched catalog repository state",
+            catalog_issues_count=len(catalog_issues),
+            catalog_prs_count=len(catalog_prs),
+            catalog_default_branch=catalog_default_branch,
+        )
+
+    # Process each issue
     for desired_issue in desired_issues_with_prs:
-        existing_issue = next((issue for issue in existing_issues if issue.title == desired_issue.title), None)
+        is_catalog_destined = getattr(desired_issue, "catalog_destined", False)
+
+        if is_catalog_destined:
+            # Use catalog adapter and state
+            adapter = catalog_adapter
+            issues_list = catalog_issues
+            prs_list = catalog_prs
+            branch = catalog_default_branch
+            logger.info("Processing catalog-destined issue", issue_title=desired_issue.title)
+        else:
+            # Use project adapter and state
+            adapter = github_adapter
+            issues_list = existing_issues
+            prs_list = existing_pull_requests
+            branch = default_branch
+            logger.info("Processing project issue", issue_title=desired_issue.title)
+
+        existing_issue = next((issue for issue in issues_list if issue.title == desired_issue.title), None)
         if existing_issue is not None:
             logger.info(
                 "Existing issue found",
@@ -439,17 +518,17 @@ async def sync_github_pull_requests(
             continue
 
         # Find existing PR associated with existing issue, if any.
-        existing_pr = await get_pull_request_associated_with_issue(existing_issue, existing_pull_requests)
+        existing_pr = await get_pull_request_associated_with_issue(existing_issue, prs_list)
 
         await sync_github_pull_request(
             desired_issue,
             existing_issue,
-            github_adapter,
-            default_branch,
+            adapter,
+            branch,
             base_directory,
             existing_pull_request=existing_pr,
             testing_as_code_workflow=testing_as_code_workflow,
-            catalog_workflow=catalog_workflow,
-            catalog_repo_url=catalog_repo_url,
-            test_cases_dir=test_cases_dir,
+            catalog_workflow=is_catalog_destined,
+            catalog_repo_url=catalog_repo_url if is_catalog_destined else None,
+            test_cases_dir=test_cases_dir if is_catalog_destined else None,
         )

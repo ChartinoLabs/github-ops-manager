@@ -204,15 +204,27 @@ def process_issues_cli(
     create_prs: Annotated[bool, Option(envvar="CREATE_PRS", help="Create PRs for issues.")] = False,
     debug: Annotated[bool, Option(envvar="DEBUG", help="Enable debug mode.")] = False,
     testing_as_code_workflow: Annotated[bool, Option(envvar="TESTING_AS_CODE_WORKFLOW", help="Enable Testing as Code workflow.")] = False,
-    catalog_workflow: Annotated[bool, Option(envvar="CATALOG_WORKFLOW", help="Enable catalog workflow for automated catalog contributions.")] = False,
     catalog_repo: Annotated[
-        str, Option(envvar="CATALOG_REPO", help="Catalog repository name (owner/repo) for catalog workflow.")
+        str,
+        Option(
+            envvar="CATALOG_REPO",
+            help="Catalog repository name (owner/repo) for catalog-destined test cases. Used when test cases have catalog_destined=true.",
+        ),
     ] = "US-PS-SVS/catalog",
-    test_cases_dir: Annotated[Path, Option(envvar="TEST_CASES_DIR", help="Directory containing test_cases.yaml files for catalog workflow.")] = Path(
-        "workspace/test_cases/"
-    ),
+    test_cases_dir: Annotated[
+        Path,
+        Option(
+            envvar="TEST_CASES_DIR",
+            help="Directory containing test_cases.yaml files for catalog PR metadata writeback. Used when test cases have catalog_destined=true.",
+        ),
+    ] = Path("workspace/test_cases/"),
 ) -> None:
-    """Processes issues in a GitHub repository."""
+    """Processes issues in a GitHub repository.
+
+    Automatically detects catalog-destined test cases (catalog_destined=true) and creates
+    PRs against the catalog repository with proper directory structure and metadata writeback.
+    Non-catalog test cases are processed normally against the project repository.
+    """
     repo: str = ctx.obj["repo"]
     github_api_url: str = ctx.obj["github_api_url"]
     github_pat_token: str = ctx.obj["github_pat_token"]
@@ -223,10 +235,6 @@ def process_issues_cli(
 
     if testing_as_code_workflow is True:
         typer.echo("Testing as Code workflow is enabled - any Pull Requests created will have an augmented body")
-
-    if catalog_workflow is True:
-        typer.echo(f"Catalog workflow is enabled - PRs will target catalog repository: {catalog_repo}")
-        typer.echo(f"Test cases directory for metadata writeback: {test_cases_dir}")
 
     # Run the workflow
     result = asyncio.run(
@@ -240,7 +248,6 @@ def process_issues_cli(
             github_api_url=github_api_url,
             yaml_path=yaml_path,
             testing_as_code_workflow=testing_as_code_workflow,
-            catalog_workflow=catalog_workflow,
             catalog_repo=catalog_repo,
             test_cases_dir=test_cases_dir,
         )

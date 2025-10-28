@@ -27,11 +27,14 @@ async def run_process_issues_workflow(
     yaml_path: Path,
     raise_on_yaml_error: bool = False,
     testing_as_code_workflow: bool = False,
-    catalog_workflow: bool = False,
     catalog_repo: str = "US-PS-SVS/catalog",
     test_cases_dir: Path = Path("workspace/test_cases/"),
 ) -> ProcessIssuesResult:
-    """Run the process-issues workflow: load issues from YAML and return them/errors."""
+    """Run the process-issues workflow: load issues from YAML and return them/errors.
+
+    Supports both project and catalog-destined test cases in the same run.
+    Issues with catalog_destined=true will have PRs created against the catalog repository.
+    """
     processor = YAMLProcessor(raise_on_error=raise_on_yaml_error)
     try:
         issues_model = processor.load_issues_model([str(yaml_path)])
@@ -42,15 +45,9 @@ async def run_process_issues_workflow(
     if issues_model.issue_template:
         issues_model = await render_issue_bodies(issues_model)
 
-    # Override repo if catalog workflow is enabled
-    target_repo = repo
-    if catalog_workflow:
-        target_repo = catalog_repo
-        logger.info("Catalog workflow enabled, targeting catalog repository", catalog_repo=catalog_repo, original_repo=repo)
-
-    # Set up GitHub adapter.
+    # Set up GitHub adapter for project repository.
     github_adapter = await GitHubKitAdapter.create(
-        repo=target_repo,
+        repo=repo,
         github_auth_type=github_auth_type,
         github_pat_token=github_pat_token,
         github_app_id=github_app_id,
@@ -126,19 +123,15 @@ async def run_process_issues_workflow(
     start_time = time.time()
     logger.info("Processing pull requests", start_time=start_time)
 
-    # Build catalog repo URL if catalog workflow is enabled
-    catalog_repo_url = None
-    if catalog_workflow:
-        # Extract base URL from github_api_url
-        # e.g., "https://api.github.com" -> "https://github.com"
-        # or "https://wwwin-github.cisco.com/api/v3" -> "https://wwwin-github.cisco.com"
-        if "api.github.com" in github_api_url:
-            base_url = "https://github.com"
-        else:
-            # For GitHub Enterprise, remove /api/v3 suffix
-            base_url = github_api_url.replace("/api/v3", "").replace("/api", "")
-        catalog_repo_url = f"{base_url}/{catalog_repo}"
-        logger.info("Built catalog repository URL", catalog_repo_url=catalog_repo_url)
+    # Build catalog repo URL for metadata writeback
+    # e.g., "https://api.github.com" -> "https://github.com"
+    # or "https://wwwin-github.cisco.com/api/v3" -> "https://wwwin-github.cisco.com"
+    if "api.github.com" in github_api_url:
+        base_url = "https://github.com"
+    else:
+        # For GitHub Enterprise, remove /api/v3 suffix
+        base_url = github_api_url.replace("/api/v3", "").replace("/api", "")
+    catalog_repo_url = f"{base_url}/{catalog_repo}"
 
     await sync_github_pull_requests(
         issues_model.issues,
@@ -148,9 +141,17 @@ async def run_process_issues_workflow(
         default_branch,
         yaml_dir,
         testing_as_code_workflow=testing_as_code_workflow,
-        catalog_workflow=catalog_workflow,
+        # Catalog configuration for catalog-destined issues
+        catalog_repo=catalog_repo,
         catalog_repo_url=catalog_repo_url,
         test_cases_dir=test_cases_dir,
+        # Auth parameters for creating catalog adapter
+        github_auth_type=github_auth_type,
+        github_pat_token=github_pat_token,
+        github_app_id=github_app_id,
+        github_app_private_key_path=github_app_private_key_path,
+        github_app_installation_id=github_app_installation_id,
+        github_api_url=github_api_url,
     )
     end_time = time.time()
     total_time = end_time - start_time
