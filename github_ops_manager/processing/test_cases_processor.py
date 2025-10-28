@@ -87,7 +87,7 @@ def extract_os_from_robot_content(robot_content: str) -> str | None:
 
     # Regex pattern to find os:<os> tag in Test Tags section
     # Matches: os:ios-xe, os:nx-os, etc.
-    pattern = r"(?:^|\s)os:([a-zA-Z0-9_-]+)"
+    pattern = r"(?:^|\s)os:(\S+)"
 
     match = re.search(pattern, robot_content, re.MULTILINE | re.IGNORECASE)
 
