@@ -12,6 +12,7 @@ from github_ops_manager.processing.test_cases_processor import (
     extract_os_from_robot_content,
     extract_os_from_robot_filename,
     find_test_cases_files,
+    load_catalog_destined_test_cases,
     load_test_cases_yaml,
     normalize_os_to_catalog_dir,
     save_test_cases_yaml,
@@ -410,6 +411,152 @@ async def sync_github_pull_request(
                 await commit_files_to_branch(desired_issue, existing_issue, desired_branch_name, base_directory, github_adapter, catalog_workflow)
 
 
+async def create_catalog_pull_requests(
+    test_cases_dir: Path,
+    base_directory: Path,
+    catalog_repo: str,
+    catalog_repo_url: str,
+    catalog_default_branch: str,
+    github_adapter: GitHubKitAdapter,
+) -> None:
+    """Create standalone PRs for catalog-destined test cases (no issues).
+
+    Reads test_cases.yaml files directly and creates PRs in catalog repository
+    without creating issues. This is simpler than the full issue/PR workflow.
+
+    Args:
+        test_cases_dir: Directory containing test_cases.yaml files
+        base_directory: Base directory where robot files are located
+        catalog_repo: Catalog repository name (owner/repo)
+        catalog_repo_url: Full URL to catalog repository
+        catalog_default_branch: Default branch in catalog repository
+        github_adapter: GitHub adapter for catalog repository
+    """
+    logger.info("Creating standalone catalog PRs", test_cases_dir=str(test_cases_dir), catalog_repo=catalog_repo)
+
+    # Load catalog-destined test cases from test_cases.yaml files
+    catalog_test_cases = load_catalog_destined_test_cases(test_cases_dir)
+
+    if not catalog_test_cases:
+        logger.info("No catalog-destined test cases found")
+        return
+
+    logger.info("Found catalog-destined test cases to process", count=len(catalog_test_cases))
+
+    for test_case in catalog_test_cases:
+        title = test_case.get("title", "Untitled Test Case")
+        script_path = test_case.get("generated_script_path")
+        source_file = Path(test_case.get("_source_file"))
+
+        if not script_path:
+            logger.warning("Test case missing generated_script_path", title=title)
+            continue
+
+        logger.info("Processing catalog test case", title=title, script_path=script_path)
+
+        # Check if PR already exists
+        existing_pr_number = test_case.get("catalog_pr_number")
+        existing_pr_url = test_case.get("catalog_pr_url")
+
+        if existing_pr_number and existing_pr_url:
+            logger.info("PR already exists for test case, skipping", title=title, pr_number=existing_pr_number, pr_url=existing_pr_url)
+            continue
+
+        # Build file path
+        robot_file_path = base_directory / script_path
+        if not robot_file_path.exists():
+            logger.error("Robot file not found", file=str(robot_file_path), title=title)
+            continue
+
+        # Read robot file content
+        robot_content = robot_file_path.read_text(encoding="utf-8")
+
+        # Extract OS from Test Tags
+        os_name = extract_os_from_robot_content(robot_content)
+        if not os_name:
+            logger.info("Test Tags parsing failed, falling back to filename parsing", filename=robot_file_path.name)
+            os_name = extract_os_from_robot_filename(robot_file_path.name)
+
+        if not os_name:
+            logger.error("Could not extract OS from robot file", file=str(robot_file_path), title=title)
+            continue
+
+        # Transform path for catalog
+        catalog_dir = normalize_os_to_catalog_dir(os_name)
+        catalog_path = f"catalog/{catalog_dir}/{robot_file_path.name}"
+
+        logger.info(
+            "Transformed robot file path for catalog",
+            original_path=str(script_path),
+            catalog_path=catalog_path,
+            os_name=os_name,
+            catalog_dir=catalog_dir,
+        )
+
+        # Create branch name
+        # Use a simpler naming scheme since we don't have issue numbers
+        branch_name = f"catalog/{os_name}/{robot_file_path.stem}".lower().replace("_", "-")
+
+        # Check if branch exists
+        if await github_adapter.branch_exists(branch_name):
+            logger.info("Branch already exists, skipping", branch=branch_name, title=title)
+            # TODO: Could update existing branch/PR here
+            continue
+
+        # Create branch
+        logger.info("Creating branch for catalog PR", branch=branch_name, base_branch=catalog_default_branch)
+        await github_adapter.create_branch(branch_name, catalog_default_branch)
+
+        # Commit file to branch
+        commit_message = f"feat: add {catalog_dir} test - {title}"
+        files_to_commit = [(catalog_path, robot_content)]
+
+        logger.info("Committing file to branch", branch=branch_name, file=catalog_path)
+        await github_adapter.commit_files_to_branch(branch_name, files_to_commit, commit_message)
+
+        # Create PR
+        pr_title = f"feat: add {catalog_dir} test - {title}"
+        pr_body = f"""Catalog contribution for test automation.
+
+**Test Case:** {title}
+**Operating System:** {os_name.upper()}
+**Script:** `{catalog_path}`
+
+This PR adds test automation generated by tac-quicksilver to the catalog for reuse across projects.
+
+🤖 Automatically generated catalog contribution"""
+
+        logger.info("Creating catalog PR", branch=branch_name, base_branch=catalog_default_branch, title=pr_title)
+        new_pr = await github_adapter.create_pull_request(
+            title=pr_title,
+            head=branch_name,
+            base=catalog_default_branch,
+            body=pr_body,
+        )
+
+        logger.info("Created catalog PR", pr_number=new_pr.number, pr_url=new_pr.html_url)
+
+        # Write PR metadata back to test_cases.yaml
+        logger.info("Writing PR metadata back to test case file", source_file=str(source_file))
+
+        # Reload the source file
+        data = load_test_cases_yaml(source_file)
+        if data and "test_cases" in data:
+            # Find the test case and update it
+            for tc in data["test_cases"]:
+                if tc.get("generated_script_path") == script_path:
+                    update_test_case_with_pr_metadata(tc, new_pr, catalog_repo_url)
+                    break
+
+            # Save back to file
+            if save_test_cases_yaml(source_file, data):
+                logger.info("Successfully wrote PR metadata back to test case file", source_file=str(source_file))
+            else:
+                logger.error("Failed to save test case file", source_file=str(source_file))
+
+    logger.info("Completed catalog PR creation", total_processed=len(catalog_test_cases))
+
+
 async def sync_github_pull_requests(
     desired_issues: list[IssueModel],
     existing_issues: list[Issue],
@@ -451,73 +598,19 @@ async def sync_github_pull_requests(
         github_app_installation_id: GitHub App installation ID for creating catalog adapter
         github_api_url: GitHub API URL for creating catalog adapter
     """
-    from github_ops_manager.configuration.models import GitHubAuthenticationType
+    # Filter out catalog-destined issues - they are handled separately by create_catalog_pull_requests()
+    desired_issues_with_prs = [issue for issue in desired_issues if issue.pull_request is not None and not getattr(issue, "catalog_destined", False)]
 
-    desired_issues_with_prs = [issue for issue in desired_issues if issue.pull_request is not None]
+    logger.info(
+        "Processing project issues with pull requests (catalog-destined filtered out)",
+        project_issues_count=len(desired_issues_with_prs),
+    )
 
-    # Check if we have any catalog-destined issues
-    catalog_destined_issues = [issue for issue in desired_issues_with_prs if getattr(issue, "catalog_destined", False)]
-
-    catalog_adapter = None
-    catalog_issues = None
-    catalog_prs = None
-    catalog_default_branch = None
-
-    if catalog_destined_issues:
-        logger.info(
-            "Detected catalog-destined issues, creating catalog adapter",
-            catalog_count=len(catalog_destined_issues),
-            total_count=len(desired_issues_with_prs),
-            catalog_repo=catalog_repo,
-        )
-
-        # Create adapter for catalog repository
-        catalog_adapter = await GitHubKitAdapter.create(
-            repo=catalog_repo,
-            github_auth_type=GitHubAuthenticationType(github_auth_type) if github_auth_type else None,
-            github_pat_token=github_pat_token,
-            github_app_id=github_app_id,
-            github_app_private_key_path=github_app_private_key_path,
-            github_app_installation_id=github_app_installation_id,
-            github_api_url=github_api_url,
-        )
-
-        # Get catalog repository info
-        catalog_repo_info = await catalog_adapter.get_repository()
-        catalog_default_branch = catalog_repo_info.default_branch
-
-        # Fetch existing issues and PRs from catalog repository
-        catalog_issues = await catalog_adapter.list_issues()
-        catalog_simple_prs = await catalog_adapter.list_pull_requests()
-        catalog_prs = [await catalog_adapter.get_pull_request(pr.number) for pr in catalog_simple_prs]
-
-        logger.info(
-            "Fetched catalog repository state",
-            catalog_issues_count=len(catalog_issues),
-            catalog_prs_count=len(catalog_prs),
-            catalog_default_branch=catalog_default_branch,
-        )
-
-    # Process each issue
+    # Process each issue (all are project issues since catalog-destined are filtered out)
     for desired_issue in desired_issues_with_prs:
-        is_catalog_destined = getattr(desired_issue, "catalog_destined", False)
+        logger.info("Processing project issue", issue_title=desired_issue.title)
 
-        if is_catalog_destined:
-            # Use catalog adapter and state
-            adapter = catalog_adapter
-            issues_list = catalog_issues
-            prs_list = catalog_prs
-            branch = catalog_default_branch
-            logger.info("Processing catalog-destined issue", issue_title=desired_issue.title)
-        else:
-            # Use project adapter and state
-            adapter = github_adapter
-            issues_list = existing_issues
-            prs_list = existing_pull_requests
-            branch = default_branch
-            logger.info("Processing project issue", issue_title=desired_issue.title)
-
-        existing_issue = next((issue for issue in issues_list if issue.title == desired_issue.title), None)
+        existing_issue = next((issue for issue in existing_issues if issue.title == desired_issue.title), None)
         if existing_issue is not None:
             logger.info(
                 "Existing issue found",
@@ -530,17 +623,17 @@ async def sync_github_pull_requests(
             continue
 
         # Find existing PR associated with existing issue, if any.
-        existing_pr = await get_pull_request_associated_with_issue(existing_issue, prs_list)
+        existing_pr = await get_pull_request_associated_with_issue(existing_issue, existing_pull_requests)
 
         await sync_github_pull_request(
             desired_issue,
             existing_issue,
-            adapter,
-            branch,
+            github_adapter,
+            default_branch,
             base_directory,
             existing_pull_request=existing_pr,
             testing_as_code_workflow=testing_as_code_workflow,
-            catalog_workflow=is_catalog_destined,
-            catalog_repo_url=catalog_repo_url if is_catalog_destined else None,
-            test_cases_dir=test_cases_dir if is_catalog_destined else None,
+            catalog_workflow=False,  # Always False for project issues
+            catalog_repo_url=None,
+            test_cases_dir=None,
         )

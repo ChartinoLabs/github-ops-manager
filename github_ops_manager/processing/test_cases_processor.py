@@ -262,3 +262,45 @@ def update_test_case_with_pr_metadata(test_case: dict[str, Any], pr: PullRequest
     )
 
     return test_case
+
+
+def load_catalog_destined_test_cases(test_cases_dir: Path) -> list[dict[str, Any]]:
+    """Load test cases that are catalog-destined from test_cases.yaml files.
+
+    Args:
+        test_cases_dir: Directory containing test_cases.yaml files
+
+    Returns:
+        List of test case dictionaries with catalog_destined=true
+    """
+    catalog_test_cases = []
+    test_case_files = find_test_cases_files(test_cases_dir)
+
+    for test_case_file in test_case_files:
+        data = load_test_cases_yaml(test_case_file)
+        if not data or "test_cases" not in data:
+            continue
+
+        test_cases = data["test_cases"]
+        if not isinstance(test_cases, list):
+            logger.warning("test_cases field is not a list", filepath=str(test_case_file))
+            continue
+
+        # Filter for catalog-destined test cases with generated scripts
+        for test_case in test_cases:
+            is_catalog = test_case.get("catalog_destined", False)
+            has_script = test_case.get("generated_script_path")
+
+            if is_catalog and has_script:
+                # Add metadata about source file for later writeback
+                test_case["_source_file"] = str(test_case_file)
+                catalog_test_cases.append(test_case)
+                logger.debug(
+                    "Found catalog-destined test case",
+                    title=test_case.get("title"),
+                    script=has_script,
+                    source_file=str(test_case_file),
+                )
+
+    logger.info("Loaded catalog-destined test cases", count=len(catalog_test_cases), test_cases_dir=str(test_cases_dir))
+    return catalog_test_cases

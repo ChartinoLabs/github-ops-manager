@@ -10,7 +10,7 @@ from github_ops_manager.configuration.models import GitHubAuthenticationType
 from github_ops_manager.github.adapter import GitHubKitAdapter
 from github_ops_manager.processing.yaml_processor import YAMLProcessingError, YAMLProcessor
 from github_ops_manager.synchronize.issues import render_issue_bodies, sync_github_issues
-from github_ops_manager.synchronize.pull_requests import sync_github_pull_requests
+from github_ops_manager.synchronize.pull_requests import create_catalog_pull_requests, sync_github_pull_requests
 from github_ops_manager.synchronize.results import AllIssueSynchronizationResults, ProcessIssuesResult
 
 logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)
@@ -156,4 +156,48 @@ async def run_process_issues_workflow(
     end_time = time.time()
     total_time = end_time - start_time
     logger.info("Processed pull requests", start_time=start_time, end_time=end_time, duration=round(total_time, 2))
+
+    # Create standalone catalog PRs (no issues) for catalog-destined test cases
+    if test_cases_dir.exists():
+        logger.info("Processing catalog-destined test cases from test_cases.yaml files", test_cases_dir=str(test_cases_dir))
+
+        # Create adapter for catalog repository
+        catalog_adapter = await GitHubKitAdapter.create(
+            repo=catalog_repo,
+            github_auth_type=github_auth_type,
+            github_pat_token=github_pat_token,
+            github_app_id=github_app_id,
+            github_app_private_key_path=github_app_private_key_path,
+            github_app_installation_id=github_app_installation_id,
+            github_api_url=github_api_url,
+        )
+
+        # Get catalog repository info
+        catalog_repo_info = await catalog_adapter.get_repository()
+        catalog_default_branch = catalog_repo_info.default_branch
+
+        # Base directory for resolving robot file paths
+        # Robot files are typically in workspace/ directory, which is parent of test_cases_dir
+        base_directory = test_cases_dir.parent if test_cases_dir.name != "." else test_cases_dir
+
+        logger.info(
+            "Creating catalog PRs",
+            catalog_repo=catalog_repo,
+            catalog_default_branch=catalog_default_branch,
+            base_directory=str(base_directory),
+        )
+
+        start_catalog_time = time.time()
+        await create_catalog_pull_requests(
+            test_cases_dir=test_cases_dir,
+            base_directory=base_directory,
+            catalog_repo=catalog_repo,
+            catalog_repo_url=catalog_repo_url,
+            catalog_default_branch=catalog_default_branch,
+            github_adapter=catalog_adapter,
+        )
+        end_catalog_time = time.time()
+        catalog_duration = end_catalog_time - start_catalog_time
+        logger.info("Completed catalog PR creation", duration=round(catalog_duration, 2))
+
     return ProcessIssuesResult(issue_sync_results)
