@@ -210,7 +210,7 @@ def process_issues_cli(
             envvar="CATALOG_REPO",
             help="Catalog repository name (owner/repo) for catalog-destined test cases. Used when test cases have catalog_destined=true.",
         ),
-    ] = "US-PS-SVS/catalog",
+    ] = "Testing-as-Code/tac-catalog",
     test_cases_dir: Annotated[
         Path,
         Option(

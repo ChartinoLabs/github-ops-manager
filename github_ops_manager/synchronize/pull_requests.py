@@ -406,7 +406,7 @@ async def sync_github_pull_requests(
     default_branch: str,
     base_directory: Path,
     testing_as_code_workflow: bool = False,
-    catalog_repo: str = "US-PS-SVS/catalog",
+    catalog_repo: str = "Testing-as-Code/tac-catalog",
     catalog_repo_url: str | None = None,
     test_cases_dir: Path | None = None,
     github_auth_type: str | None = None,

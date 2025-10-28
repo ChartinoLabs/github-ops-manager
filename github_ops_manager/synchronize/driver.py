@@ -27,7 +27,7 @@ async def run_process_issues_workflow(
     yaml_path: Path,
     raise_on_yaml_error: bool = False,
     testing_as_code_workflow: bool = False,
-    catalog_repo: str = "US-PS-SVS/catalog",
+    catalog_repo: str = "Testing-as-Code/tac-catalog",
     test_cases_dir: Path = Path("workspace/test_cases/"),
 ) -> ProcessIssuesResult:
     """Run the process-issues workflow: load issues from YAML and return them/errors.
