@@ -9,6 +9,7 @@ from structlog.contextvars import bound_contextvars
 
 from github_ops_manager.github.adapter import GitHubKitAdapter
 from github_ops_manager.processing.test_cases_processor import (
+    extract_os_from_robot_content,
     extract_os_from_robot_filename,
     find_test_cases_files,
     load_test_cases_yaml,
@@ -107,7 +108,17 @@ async def get_desired_pull_request_file_content(
             # Transform path if catalog workflow and file is a robot file
             if catalog_workflow and file.endswith(".robot"):
                 filename = Path(file).name
-                os_name = extract_os_from_robot_filename(filename)
+
+                # Try to extract OS from Test Tags in robot file content (preferred)
+                os_name = extract_os_from_robot_content(file_content)
+                extraction_method = "test_tags"
+
+                # Fall back to filename parsing if Test Tags parsing fails
+                if not os_name:
+                    logger.info("Test Tags parsing failed, falling back to filename parsing", filename=filename)
+                    os_name = extract_os_from_robot_filename(filename)
+                    extraction_method = "filename"
+
                 if os_name:
                     catalog_dir = normalize_os_to_catalog_dir(os_name)
                     catalog_path = f"catalog/{catalog_dir}/{filename}"
@@ -117,10 +128,11 @@ async def get_desired_pull_request_file_content(
                         catalog_path=catalog_path,
                         os_name=os_name,
                         catalog_dir=catalog_dir,
+                        extraction_method=extraction_method,
                     )
                     files.append((catalog_path, file_content))
                 else:
-                    logger.warning("Could not extract OS from robot filename, using original path", filename=filename)
+                    logger.warning("Could not extract OS from robot file, using original path", filename=filename)
                     files.append((file, file_content))
             else:
                 files.append((file, file_content))

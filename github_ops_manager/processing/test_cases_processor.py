@@ -62,8 +62,49 @@ def normalize_os_to_catalog_dir(os_name: str) -> str:
     return normalized
 
 
+def extract_os_from_robot_content(robot_content: str) -> str | None:
+    """Extract OS from robot file Test Tags section.
+
+    Looks for the os:<os> tag in the Test Tags section of a Robot Framework file.
+    This is more reliable than filename parsing since tags are structured metadata.
+
+    Args:
+        robot_content: Complete content of robot file
+
+    Returns:
+        Extracted OS name (e.g., "ios-xe", "nx-os") or None if not found
+
+    Example:
+        >>> content = '''
+        ... Test Tags
+        ... ...    os:ios-xe
+        ... ...    category:foundations
+        ... '''
+        >>> extract_os_from_robot_content(content)
+        'ios-xe'
+    """
+    import re
+
+    # Regex pattern to find os:<os> tag in Test Tags section
+    # Matches: os:ios-xe, os:nx-os, etc.
+    pattern = r"(?:^|\s)os:([a-zA-Z0-9_-]+)"
+
+    match = re.search(pattern, robot_content, re.MULTILINE | re.IGNORECASE)
+
+    if match:
+        os_value = match.group(1).lower()
+        logger.debug("Extracted OS from Test Tags", os=os_value)
+        return os_value
+
+    logger.warning("Could not find os: tag in robot file Test Tags section")
+    return None
+
+
 def extract_os_from_robot_filename(filename: str) -> str | None:
     """Extract OS from robot filename pattern like verify_ios_xe_*.robot.
+
+    This is a fallback method if Test Tags parsing fails.
+    Prefer extract_os_from_robot_content() for more reliable extraction.
 
     Args:
         filename: Robot filename (e.g., "verify_ios_xe_interfaces.robot")
