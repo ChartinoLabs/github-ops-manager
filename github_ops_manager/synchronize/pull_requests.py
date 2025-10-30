@@ -493,9 +493,9 @@ async def create_catalog_pull_requests(
             catalog_dir=catalog_dir,
         )
 
-        # Create branch name
-        # Use a simpler naming scheme since we don't have issue numbers
-        branch_name = f"catalog/{os_name}/{robot_file_path.stem}".lower().replace("_", "-")
+        # Create branch name following conventional Git naming patterns
+        # feat/add-<script-name> (e.g., feat/add-verify-iosxe-error-disable-detection-reason-presence)
+        branch_name = f"feat/add-{robot_file_path.stem}".lower().replace("_", "-")
 
         # Check if branch exists
         if await github_adapter.branch_exists(branch_name):
