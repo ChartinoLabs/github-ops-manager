@@ -129,8 +129,8 @@ async def run_process_issues_workflow(
     if "api.github.com" in github_api_url:
         base_url = "https://github.com"
     else:
-        # For GitHub Enterprise, remove /api/v3 suffix
-        base_url = github_api_url.replace("/api/v3", "").replace("/api", "")
+        # For GitHub Enterprise, remove /api/v3 suffix and any trailing slashes
+        base_url = github_api_url.replace("/api/v3", "").replace("/api", "").rstrip("/")
     catalog_repo_url = f"{base_url}/{catalog_repo}"
 
     await sync_github_pull_requests(
