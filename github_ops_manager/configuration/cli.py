@@ -259,6 +259,99 @@ def process_issues_cli(
         sys.exit(1)
 
 
+@repo_app.command(name="process-test-cases")
+def process_test_cases_cli(
+    ctx: typer.Context,
+    test_cases_dir: Annotated[Path, Argument(help="Directory containing test_cases.yaml files.")],
+    catalog_repo: Annotated[
+        str,
+        Option(
+            envvar="CATALOG_REPO",
+            help="Catalog repository name (owner/repo) for catalog-destined test cases.",
+        ),
+    ] = "Testing-as-Code/tac-catalog",
+) -> None:
+    """Process test cases using embedded metadata (no issues.yaml required).
+
+    This command reads test_cases.yaml files directly and uses embedded metadata
+    (project_issue_number, project_pr_number, etc.) to sync issues and PRs with GitHub.
+
+    Benefits over process-issues:
+    - No separate issues.yaml file needed
+    - Fast direct ID lookups instead of title matching
+    - Automatic metadata writeback to test_cases.yaml
+    - Single source of truth for all test case information
+
+    For test cases with catalog_destined=true, PRs are created against the catalog repository.
+    """
+    from github_ops_manager.synchronize.driver import run_process_test_cases_workflow
+
+    repo: str = ctx.obj["repo"]
+    github_api_url: str = ctx.obj["github_api_url"]
+    github_pat_token: str = ctx.obj["github_pat_token"]
+    github_app_id: int = ctx.obj["github_app_id"]
+    github_app_private_key_path: Path | None = ctx.obj["github_app_private_key_path"]
+    github_app_installation_id: int = ctx.obj["github_app_installation_id"]
+    github_auth_type = ctx.obj["github_auth_type"]
+
+    if not test_cases_dir.exists():
+        typer.echo(f"Error: test_cases directory not found at {test_cases_dir}", err=True)
+        raise typer.Exit(1)
+
+    typer.echo(f"Processing test cases from {test_cases_dir}")
+    typer.echo(f"Repository: {repo}")
+    typer.echo(f"Catalog repository: {catalog_repo}")
+    typer.echo("")
+
+    # Run the workflow
+    stats = asyncio.run(
+        run_process_test_cases_workflow(
+            repo=repo,
+            github_pat_token=github_pat_token,
+            github_app_id=github_app_id,
+            github_app_private_key_path=github_app_private_key_path,
+            github_app_installation_id=github_app_installation_id,
+            github_auth_type=github_auth_type,
+            github_api_url=github_api_url,
+            test_cases_dir=test_cases_dir,
+            catalog_repo=catalog_repo,
+        )
+    )
+
+    # Display results
+    typer.echo("")
+    typer.echo("=" * 70)
+    typer.echo("WORKFLOW SUMMARY")
+    typer.echo("=" * 70)
+
+    if "issues" in stats:
+        issue_stats = stats["issues"]
+        typer.echo("Issues:")
+        typer.echo(f"  Test cases processed: {issue_stats['test_cases_processed']}")
+        typer.echo(f"  Issues created: {issue_stats['issues_created']}")
+        typer.echo(f"  Issues updated: {issue_stats['issues_updated']}")
+        typer.echo(f"  Issues unchanged: {issue_stats['issues_unchanged']}")
+        if issue_stats["errors"]:
+            typer.echo(f"  Errors: {len(issue_stats['errors'])}")
+        typer.echo("")
+
+    if "pull_requests" in stats:
+        pr_stats = stats["pull_requests"]
+        typer.echo("Pull Requests:")
+        typer.echo(f"  Test cases processed: {pr_stats['test_cases_processed']}")
+        typer.echo(f"  PRs created: {pr_stats['prs_created']}")
+        typer.echo(f"  PRs updated: {pr_stats['prs_updated']}")
+        typer.echo(f"  PRs unchanged: {pr_stats['prs_unchanged']}")
+        typer.echo(f"  PRs skipped: {pr_stats['prs_skipped']}")
+        if pr_stats["errors"]:
+            typer.echo(f"  Errors: {len(pr_stats['errors'])}")
+        typer.echo("")
+
+    typer.echo("=" * 70)
+    typer.echo("")
+    typer.echo("✅ Workflow completed successfully!")
+
+
 # --- Move export-issues under repo_app ---
 @repo_app.command(name="export-issues")
 def export_issues_cli(

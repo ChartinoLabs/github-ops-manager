@@ -10,7 +10,9 @@ from github_ops_manager.configuration.models import GitHubAuthenticationType
 from github_ops_manager.github.adapter import GitHubKitAdapter
 from github_ops_manager.processing.yaml_processor import YAMLProcessingError, YAMLProcessor
 from github_ops_manager.synchronize.issues import render_issue_bodies, sync_github_issues
+from github_ops_manager.synchronize.issues_metadata import sync_test_cases_issues
 from github_ops_manager.synchronize.pull_requests import create_catalog_pull_requests, sync_github_pull_requests
+from github_ops_manager.synchronize.pull_requests_metadata import sync_test_cases_pull_requests
 from github_ops_manager.synchronize.results import AllIssueSynchronizationResults, ProcessIssuesResult
 
 logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)
@@ -201,3 +203,121 @@ async def run_process_issues_workflow(
         logger.info("Completed catalog PR creation", duration=round(catalog_duration, 2))
 
     return ProcessIssuesResult(issue_sync_results)
+
+
+async def run_process_test_cases_workflow(
+    repo: str,
+    github_pat_token: str | None,
+    github_app_id: int | None,
+    github_app_private_key_path: Path | None,
+    github_app_installation_id: int | None,
+    github_auth_type: GitHubAuthenticationType,
+    github_api_url: str,
+    test_cases_dir: Path,
+    catalog_repo: str = "Testing-as-Code/tac-catalog",
+) -> dict:
+    """Run the process-test-cases workflow: sync issues/PRs using embedded metadata from test_cases.yaml.
+
+    This workflow reads test_cases.yaml files directly and uses embedded metadata
+    (project_issue_number, project_pr_number, etc.) to sync with GitHub. This eliminates
+    the need for a separate issues.yaml file.
+
+    For test cases with catalog_destined=true, PRs are created against the catalog repository.
+
+    Args:
+        repo: Repository name (owner/repo)
+        github_pat_token: GitHub PAT token
+        github_app_id: GitHub App ID
+        github_app_private_key_path: Path to GitHub App private key
+        github_app_installation_id: GitHub App installation ID
+        github_auth_type: GitHub authentication type
+        github_api_url: GitHub API URL
+        test_cases_dir: Directory containing test_cases.yaml files
+        catalog_repo: Catalog repository name (owner/repo)
+
+    Returns:
+        Dictionary with workflow statistics
+    """
+    logger.info("Starting test cases workflow", test_cases_dir=str(test_cases_dir), repo=repo)
+
+    # Set up GitHub adapter for project repository
+    github_adapter = await GitHubKitAdapter.create(
+        repo=repo,
+        github_auth_type=github_auth_type,
+        github_pat_token=github_pat_token,
+        github_app_id=github_app_id,
+        github_app_private_key_path=github_app_private_key_path,
+        github_app_installation_id=github_app_installation_id,
+        github_api_url=github_api_url,
+    )
+
+    # Get repository info
+    repo_info = await github_adapter.get_repository()
+    default_branch = repo_info.default_branch
+
+    # Build catalog repo URL
+    if "api.github.com" in github_api_url:
+        base_url = "https://github.com"
+    else:
+        base_url = github_api_url.replace("/api/v3", "").replace("/api", "").rstrip("/")
+    catalog_repo_url = f"{base_url}/{catalog_repo}"
+
+    # Base directory for resolving robot file paths
+    base_directory = test_cases_dir.parent if test_cases_dir.name != "." else test_cases_dir
+
+    # Synchronize issues using embedded metadata
+    logger.info("Synchronizing issues from test cases")
+    issue_stats = await sync_test_cases_issues(
+        test_cases_dir=test_cases_dir,
+        github_adapter=github_adapter,
+        github_api_url=github_api_url,
+        repo=repo,
+    )
+
+    # Synchronize pull requests using embedded metadata
+    logger.info("Synchronizing pull requests from test cases")
+    pr_stats = await sync_test_cases_pull_requests(
+        test_cases_dir=test_cases_dir,
+        github_adapter=github_adapter,
+        default_branch=default_branch,
+        base_directory=base_directory,
+        github_api_url=github_api_url,
+        repo=repo,
+    )
+
+    # Create standalone catalog PRs for catalog-destined test cases
+    if test_cases_dir.exists():
+        logger.info("Processing catalog-destined test cases")
+
+        # Create adapter for catalog repository
+        catalog_adapter = await GitHubKitAdapter.create(
+            repo=catalog_repo,
+            github_auth_type=github_auth_type,
+            github_pat_token=github_pat_token,
+            github_app_id=github_app_id,
+            github_app_private_key_path=github_app_private_key_path,
+            github_app_installation_id=github_app_installation_id,
+            github_api_url=github_api_url,
+        )
+
+        # Get catalog repository info
+        catalog_repo_info = await catalog_adapter.get_repository()
+        catalog_default_branch = catalog_repo_info.default_branch
+
+        logger.info("Creating catalog PRs", catalog_repo=catalog_repo, catalog_default_branch=catalog_default_branch)
+
+        await create_catalog_pull_requests(
+            test_cases_dir=test_cases_dir,
+            base_directory=base_directory,
+            catalog_repo=catalog_repo,
+            catalog_repo_url=catalog_repo_url,
+            catalog_default_branch=catalog_default_branch,
+            github_adapter=catalog_adapter,
+        )
+
+    logger.info("Completed test cases workflow")
+
+    return {
+        "issues": issue_stats,
+        "pull_requests": pr_stats,
+    }
