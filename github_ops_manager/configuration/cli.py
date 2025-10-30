@@ -429,5 +429,114 @@ def sync_new_files_cli(
         typer.echo(str(added_issues[0].model_dump()))
 
 
+@typer_app.command(name="migrate-issues-to-metadata")
+def migrate_issues_to_metadata_cli(
+    ctx: typer.Context,
+    repo: Annotated[str, Argument(help="Repository name (owner/repo).")],
+    issues_yaml_path: Annotated[Path, Argument(help="Path to issues.yaml file.")],
+    test_cases_dir: Annotated[Path, Argument(help="Directory containing test_cases.yaml files.")],
+    github_api_url: Annotated[str, Option(envvar="GITHUB_API_URL", help="GitHub API URL.")] = "https://api.github.com",
+    github_pat_token: Annotated[str | None, Option(envvar="GITHUB_PAT_TOKEN", help="GitHub Personal Access Token.")] = None,
+    github_app_id: Annotated[int | None, Option(envvar="GITHUB_APP_ID", help="GitHub App ID.")] = None,
+    github_app_private_key_path: Annotated[Path | None, Option(envvar="GITHUB_APP_PRIVATE_KEY_PATH", help="Path to GitHub App private key.")] = None,
+    github_app_installation_id: Annotated[int | None, Option(envvar="GITHUB_APP_INSTALLATION_ID", help="GitHub App Installation ID.")] = None,
+) -> None:
+    """Migrate issue/PR metadata from issues.yaml to test_cases.yaml files.
+
+    This command reads an existing issues.yaml file, finds corresponding GitHub issues
+    and PRs, locates matching test cases in test_cases.yaml files, and embeds the
+    issue/PR metadata directly into the test case definitions.
+
+    After migration, issues.yaml can be safely deleted as all tracking information
+    will be embedded in test_cases.yaml files.
+    """
+    from github_ops_manager.migrate.issues_to_metadata import migrate_issues_to_metadata
+
+    # Validate inputs
+    if not issues_yaml_path.exists():
+        typer.echo(f"Error: issues.yaml not found at {issues_yaml_path}", err=True)
+        raise typer.Exit(1)
+
+    if not test_cases_dir.exists():
+        typer.echo(f"Error: test_cases directory not found at {test_cases_dir}", err=True)
+        raise typer.Exit(1)
+
+    # Validate GitHub authentication
+    github_auth_type = asyncio.run(
+        validate_github_authentication_configuration(
+            github_pat_token=github_pat_token,
+            github_app_id=github_app_id,
+            github_app_private_key_path=github_app_private_key_path,
+            github_app_installation_id=github_app_installation_id,
+        )
+    )
+
+    typer.echo(f"Migrating issues from {issues_yaml_path} to test_cases.yaml files in {test_cases_dir}")
+    typer.echo(f"Repository: {repo}")
+    typer.echo("")
+
+    async def run_migration() -> None:
+        # Create GitHub adapter
+        adapter = await GitHubKitAdapter.create(
+            repo=repo,
+            github_auth_type=github_auth_type,
+            github_pat_token=github_pat_token,
+            github_app_id=github_app_id,
+            github_app_private_key_path=github_app_private_key_path,
+            github_app_installation_id=github_app_installation_id,
+            github_api_url=github_api_url,
+        )
+
+        # Run migration
+        stats = await migrate_issues_to_metadata(
+            issues_yaml_path=issues_yaml_path,
+            test_cases_dir=test_cases_dir,
+            github_adapter=adapter,
+            github_api_url=github_api_url,
+        )
+
+        # Display results
+        typer.echo("")
+        typer.echo("=" * 70)
+        typer.echo("MIGRATION SUMMARY")
+        typer.echo("=" * 70)
+        typer.echo(f"Issues processed from issues.yaml: {stats['issues_processed']}")
+        typer.echo(f"Test cases updated: {stats['test_cases_updated']}")
+        typer.echo("")
+
+        if stats["issues_without_github_issue"]:
+            typer.echo(f"⚠️  Issues in issues.yaml not found on GitHub: {len(stats['issues_without_github_issue'])}")
+            for title in stats["issues_without_github_issue"]:
+                typer.echo(f"  - {title}")
+            typer.echo("")
+
+        if stats["issues_without_test_case"]:
+            typer.echo(f"⚠️  Issues without matching test case: {len(stats['issues_without_test_case'])}")
+            for title in stats["issues_without_test_case"]:
+                typer.echo(f"  - {title}")
+            typer.echo("")
+
+        if stats["orphaned_test_cases"]:
+            typer.echo(f"📋 Test cases without project issues/PRs: {len(stats['orphaned_test_cases'])}")
+            for title in stats["orphaned_test_cases"]:
+                typer.echo(f"  - {title}")
+            typer.echo("")
+
+        typer.echo("=" * 70)
+        typer.echo("")
+
+        if stats["test_cases_updated"] > 0:
+            typer.echo("✅ Migration completed successfully!")
+            typer.echo("")
+            typer.echo("Next steps:")
+            typer.echo("  1. Review the updated test_cases.yaml files")
+            typer.echo("  2. Test the 'process-issues' command without issues.yaml")
+            typer.echo(f"  3. Once verified, you can safely delete {issues_yaml_path}")
+        else:
+            typer.echo("⚠️  No test cases were updated. Please review the warnings above.")
+
+    asyncio.run(run_migration())
+
+
 if __name__ == "__main__":
     typer_app()
