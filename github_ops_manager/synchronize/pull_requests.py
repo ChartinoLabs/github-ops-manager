@@ -494,8 +494,8 @@ async def create_catalog_pull_requests(
         )
 
         # Create branch name following conventional Git naming patterns
-        # feat/add-<script-name> (e.g., feat/add-verify-iosxe-error-disable-detection-reason-presence)
-        branch_name = f"feat/add-{robot_file_path.stem}".lower().replace("_", "-")
+        # feat/<os_name>/add-<script-name> (e.g., feat/ios-xe/add-verify-iosxe-error-disable-detection-reason-presence)
+        branch_name = f"feat/{os_name}/add-{robot_file_path.stem}".lower().replace("_", "-")
 
         # Check if branch exists
         if await github_adapter.branch_exists(branch_name):
