@@ -58,6 +58,35 @@ def strip_os_tag_from_title(title: str) -> str:
     return cleaned_title
 
 
+def compute_project_branch_name(catalog_branch: str) -> str:
+    """Compute suggested project repository branch name from catalog branch.
+
+    Replaces 'feat/' prefix with 'learn/' to indicate parameter learning branch.
+
+    Args:
+        catalog_branch: Catalog repository branch name
+
+    Returns:
+        Suggested project repository branch name
+
+    Examples:
+        >>> compute_project_branch_name("feat/nx-os/add-verify-nxos-module-port-number")
+        "learn/nx-os/add-verify-nxos-module-port-number"
+        >>> compute_project_branch_name("feat/ios-xe/add-verify-iosxe-interface-status")
+        "learn/ios-xe/add-verify-iosxe-interface-status"
+        >>> compute_project_branch_name("feature/test")
+        "learn/test"
+    """
+    # Replace feat/ or feature/ prefix with learn/
+    if catalog_branch.startswith("feat/"):
+        return catalog_branch.replace("feat/", "learn/", 1)
+    elif catalog_branch.startswith("feature/"):
+        return catalog_branch.replace("feature/", "learn/", 1)
+    else:
+        # If no feat/feature prefix, just prepend learn/
+        return f"learn/{catalog_branch}"
+
+
 async def create_tracking_issue_for_catalog_pr(
     github_adapter: GitHubKitAdapter,
     catalog_pr: PullRequest,
@@ -88,6 +117,9 @@ async def create_tracking_issue_for_catalog_pr(
     # This matches the test case group name that will appear in cxtm.yaml
     clean_title = strip_os_tag_from_title(test_case_title)
 
+    # Compute suggested project branch name from catalog branch
+    suggested_branch = compute_project_branch_name(catalog_pr.head.ref)
+
     title = f"Review Catalog PR and Learn Parameters: {test_case_title}"
 
     # Load and render the tracking issue template
@@ -97,6 +129,7 @@ async def create_tracking_issue_for_catalog_pr(
         catalog_pr_url=catalog_pr.html_url,
         catalog_pr_number=catalog_pr.number,
         catalog_branch=catalog_pr.head.ref,
+        suggested_project_branch=suggested_branch,
         test_case_title=test_case_title,  # Original title with OS tag for display
         test_case_title_clean=clean_title,  # Clean title for CLI commands
         os_name=os_name.upper(),
