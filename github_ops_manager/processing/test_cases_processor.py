@@ -264,6 +264,29 @@ def update_test_case_with_pr_metadata(test_case: dict[str, Any], pr: PullRequest
     return test_case
 
 
+def update_test_case_with_issue_metadata(test_case: dict[str, Any], issue_number: int, issue_url: str) -> dict[str, Any]:
+    """Add project issue metadata fields to test case.
+
+    Args:
+        test_case: Test case dictionary to update
+        issue_number: GitHub Issue number
+        issue_url: GitHub Issue URL
+
+    Returns:
+        Updated test case dictionary
+    """
+    test_case["project_issue_number"] = issue_number
+    test_case["project_issue_url"] = issue_url
+
+    logger.info(
+        "Updated test case with project issue metadata",
+        project_issue_number=issue_number,
+        project_issue_url=issue_url,
+    )
+
+    return test_case
+
+
 def load_catalog_destined_test_cases(test_cases_dir: Path) -> list[dict[str, Any]]:
     """Load test cases that are catalog-destined from test_cases.yaml files.
 

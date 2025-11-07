@@ -12,6 +12,7 @@ from github_ops_manager.processing.yaml_processor import YAMLProcessingError, YA
 from github_ops_manager.synchronize.issues import render_issue_bodies, sync_github_issues
 from github_ops_manager.synchronize.pull_requests import create_catalog_pull_requests, sync_github_pull_requests
 from github_ops_manager.synchronize.results import AllIssueSynchronizationResults, ProcessIssuesResult
+from github_ops_manager.synchronize.tracking_issues import create_tracking_issues_for_catalog_prs
 
 logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)
 
@@ -29,6 +30,8 @@ async def run_process_issues_workflow(
     testing_as_code_workflow: bool = False,
     catalog_repo: str = "Testing-as-Code/tac-catalog",
     test_cases_dir: Path = Path("workspace/test_cases/"),
+    create_tracking_issues: bool = False,
+    tracking_issue_labels: list[str] | None = None,
 ) -> ProcessIssuesResult:
     """Run the process-issues workflow: load issues from YAML and return them/errors.
 
@@ -188,7 +191,7 @@ async def run_process_issues_workflow(
         )
 
         start_catalog_time = time.time()
-        await create_catalog_pull_requests(
+        catalog_pr_data = await create_catalog_pull_requests(
             test_cases_dir=test_cases_dir,
             base_directory=base_directory,
             catalog_repo=catalog_repo,
@@ -199,5 +202,28 @@ async def run_process_issues_workflow(
         end_catalog_time = time.time()
         catalog_duration = end_catalog_time - start_catalog_time
         logger.info("Completed catalog PR creation", duration=round(catalog_duration, 2))
+
+        # Create tracking issues in project repo for catalog PRs
+        if create_tracking_issues and catalog_pr_data:
+            logger.info(
+                "Creating tracking issues in project repository",
+                catalog_pr_count=len(catalog_pr_data),
+                repo=repo,
+            )
+
+            start_tracking_time = time.time()
+            tracking_issues = await create_tracking_issues_for_catalog_prs(
+                github_adapter=github_adapter,  # Project repo adapter
+                catalog_pr_data=catalog_pr_data,
+                catalog_repo=catalog_repo,
+                labels=tracking_issue_labels,
+            )
+            end_tracking_time = time.time()
+            tracking_duration = end_tracking_time - start_tracking_time
+            logger.info(
+                "Completed tracking issue creation",
+                duration=round(tracking_duration, 2),
+                issues_created=len(tracking_issues),
+            )
 
     return ProcessIssuesResult(issue_sync_results)
