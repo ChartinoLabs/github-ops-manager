@@ -7,12 +7,27 @@
 
 ### Tasks
 
-- [ ] Create a new branch in this project repository to track your test case parameter additions (suggested: `{{ suggested_project_branch }}`)
+- [ ] Create a new branch in this project repository to track your test case parameter additions. Suggested branch name:
+  ```bash
+  git checkout -b {{ suggested_project_branch }}
+  ```
+
 - [ ] Review the Catalog PR for any glaringly obvious issues
-- [ ] Execute `tac-tools scripts learn "{{ test_case_title_clean }}"` and validate whether test case parameters are successfully inserted into the cxtm.yaml file. If any errors occur, troubleshoot and resolve them by editing the test automation script in the branch associated with the Catalog PR in the Catalog repository
-- [ ] Execute `tac-tools scripts run "{{ test_case_title_clean }}"` and validate whether test case parameters are successfully validated against the testbed. If any errors occur, troubleshoot and verify that they are not due to a legitimate issue with the testbed. If the testbed is healthy, edit the test automation script in the branch associated with the Catalog PR in the Catalog repository
+
+- [ ] Execute the following command to learn parameters and validate whether test case parameters are successfully inserted into the cxtm.yaml file. If any errors occur, troubleshoot and resolve them by editing the test automation script in the branch associated with the Catalog PR in the Catalog repository:
+  ```bash
+  tac-tools scripts learn "{{ test_case_title_clean }}"
+  ```
+
+- [ ] Execute the following command to run tests and validate whether test case parameters are successfully validated against the testbed. If any errors occur, troubleshoot and verify that they are not due to a legitimate issue with the testbed. If the testbed is healthy, edit the test automation script in the branch associated with the Catalog PR in the Catalog repository:
+  ```bash
+  tac-tools scripts run "{{ test_case_title_clean }}"
+  ```
+
 - [ ] When the test automation script in the Catalog repository is in a known working condition, assign a Catalog reviewer to review the PR
+
 - [ ] Submit a PR in this project repository tracking your test case parameters. **Make sure to link the PR to this issue so that this issue is automatically closed when the PR is merged**
+
 - [ ] Either have the PR reviewed by another engineer (recommended) or merge the PR yourself, depending on your project and team's established processes
 
 ---
