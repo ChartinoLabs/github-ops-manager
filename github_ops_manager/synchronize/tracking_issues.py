@@ -30,6 +30,34 @@ def load_tracking_issue_template() -> Template:
     return jinja_env.get_template("tracking_issue.j2")
 
 
+def strip_os_tag_from_title(title: str) -> str:
+    """Strip OS tag prefix from test case title.
+
+    Removes leading OS tags like [IOS-XE], [NX-OS], etc. from the title
+    to get the clean test case group name that appears in cxtm.yaml.
+
+    Args:
+        title: Test case title potentially with OS tag prefix
+
+    Returns:
+        Title without OS tag prefix
+
+    Examples:
+        >>> strip_os_tag_from_title("[IOS-XE] Verify Interface Status")
+        "Verify Interface Status"
+        >>> strip_os_tag_from_title("[NX-OS] Check BGP Neighbors")
+        "Check BGP Neighbors"
+        >>> strip_os_tag_from_title("Verify LLDP on all devices")
+        "Verify LLDP on all devices"
+    """
+    import re
+
+    # Pattern matches [ANYTHING] at the start of the string, followed by optional whitespace
+    pattern = r"^\[.*?\]\s*"
+    cleaned_title = re.sub(pattern, "", title)
+    return cleaned_title
+
+
 async def create_tracking_issue_for_catalog_pr(
     github_adapter: GitHubKitAdapter,
     catalog_pr: PullRequest,
@@ -56,6 +84,10 @@ async def create_tracking_issue_for_catalog_pr(
     test_case = test_cases[0]
     test_case_title = test_case.get("title", "Untitled Test Case")
 
+    # Strip OS tag from title for CLI commands (e.g., "[IOS-XE] Do Thing" -> "Do Thing")
+    # This matches the test case group name that will appear in cxtm.yaml
+    clean_title = strip_os_tag_from_title(test_case_title)
+
     title = f"Review Catalog PR and Learn Parameters: {test_case_title}"
 
     # Load and render the tracking issue template
@@ -65,7 +97,8 @@ async def create_tracking_issue_for_catalog_pr(
         catalog_pr_url=catalog_pr.html_url,
         catalog_pr_number=catalog_pr.number,
         catalog_branch=catalog_pr.head.ref,
-        test_case_title=test_case_title,
+        test_case_title=test_case_title,  # Original title with OS tag for display
+        test_case_title_clean=clean_title,  # Clean title for CLI commands
         os_name=os_name.upper(),
     )
 
