@@ -10,7 +10,7 @@ import time
 from typing import Any, Callable, TypeVar
 
 import structlog
-from githubkit.exception import RequestFailed
+from githubkit.exception import PrimaryRateLimitExceeded, RequestFailed, SecondaryRateLimitExceeded
 
 logger = structlog.get_logger(__name__)
 
@@ -55,6 +55,42 @@ def retry_on_rate_limit(
             for attempt in range(max_retries + 1):
                 try:
                     return await func(*args, **kwargs)
+                except (PrimaryRateLimitExceeded, SecondaryRateLimitExceeded) as e:
+                    # These exceptions already have retry_after as a timedelta
+                    last_exception = e
+
+                    if attempt == max_retries:
+                        # Max retries reached
+                        logger.error(
+                            "Max retries reached for GitHub rate limit error",
+                            function=func.__name__,
+                            attempt=attempt + 1,
+                            error_type=type(e).__name__,
+                            retry_after=str(e.retry_after) if hasattr(e, "retry_after") else "unknown",
+                        )
+                        raise
+
+                    # Extract wait time from the exception's retry_after timedelta
+                    if hasattr(e, "retry_after") and e.retry_after:
+                        wait_time = min(e.retry_after.total_seconds(), max_delay)
+                    else:
+                        # Fallback to exponential backoff if no retry_after
+                        wait_time = min(delay, max_delay)
+
+                    logger.warning(
+                        f"GitHub rate limit exceeded, waiting {wait_time} seconds",
+                        function=func.__name__,
+                        rate_limit_type="primary" if isinstance(e, PrimaryRateLimitExceeded) else "secondary",
+                        attempt=attempt + 1,
+                        max_retries=max_retries,
+                        wait_time=wait_time,
+                    )
+
+                    await asyncio.sleep(wait_time)
+
+                    # Exponential backoff for next attempt
+                    delay = min(delay * exponential_base, max_delay)
+
                 except RequestFailed as e:
                     last_exception = e
 
