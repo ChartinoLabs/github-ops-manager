@@ -14,7 +14,7 @@ from github_ops_manager.utils.retry import retry_on_rate_limit
 logger = structlog.get_logger(__name__)
 
 
-class UserNotFoundException(Exception):
+class UserNotFoundError(Exception):
     """Exception raised when a user is not found on GitHub."""
 
     pass
@@ -23,7 +23,7 @@ class UserNotFoundException(Exception):
 class SearchRateLimiter:
     """Handle Search API's stricter rate limits (30 requests per minute)."""
 
-    def __init__(self, max_per_minute: int = 30):
+    def __init__(self, max_per_minute: int = 30) -> None:
         """Initialize the rate limiter.
 
         Args:
@@ -50,7 +50,7 @@ class SearchRateLimiter:
 class UserRepositoryDiscoverer:
     """Discover repositories from user activity using Search API."""
 
-    def __init__(self, github_client: GitHub):
+    def __init__(self, github_client: GitHub) -> None:
         """Initialize the discoverer.
 
         Args:
@@ -117,14 +117,14 @@ class UserRepositoryDiscoverer:
                     count=len(commit_repos),
                     commit_repos=list(commit_repos)[:20],  # Show first 20 for debugging
                 )
-            except UserNotFoundException:
-                # Re-raise UserNotFoundException from commit search
+            except UserNotFoundError:
+                # Re-raise UserNotFoundError from commit search
                 raise
             except Exception as e:
                 # Other commit search errors (not user-not-found) can be ignored
                 logger.warning("Could not search commits for user", username=username, error=str(e), error_type=type(e).__name__)
 
-        except UserNotFoundException as e:
+        except UserNotFoundError as e:
             # User doesn't exist on GitHub - return empty set immediately
             logger.info("User not found on GitHub, skipping all repository discovery", username=username, error=str(e))
             return set()
@@ -258,7 +258,7 @@ class UserRepositoryDiscoverer:
                         if "reviewed-by:" in query
                         else "unknown"
                     )
-                    raise UserNotFoundException(f"User '{username}' not found on GitHub (422 error)")
+                    raise UserNotFoundError(f"User '{username}' not found on GitHub (422 error)") from None
                 else:
                     logger.error("Search API error", query=query, status_code=e.response.status_code, error=str(e))
                     break
@@ -299,7 +299,7 @@ class UserRepositoryDiscoverer:
                 logger.warning("Commit search not available or invalid query", query=query, error=str(e))
                 # Extract username from query for the exception message
                 username = query.split("author:")[1].split()[0] if "author:" in query else "unknown"
-                raise UserNotFoundException(f"User '{username}' not found on GitHub (422 error in commit search)")
+                raise UserNotFoundError(f"User '{username}' not found on GitHub (422 error in commit search)") from None
             raise
         except Exception as e:
             logger.error("Error searching commits", query=query, error=str(e))
