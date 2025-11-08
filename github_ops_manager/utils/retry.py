@@ -18,7 +18,7 @@ F = TypeVar("F", bound=Callable[..., Any])
 
 
 def retry_on_rate_limit(
-    max_retries: int = 3,
+    max_retries: int = 100,
     initial_delay: float = 10.0,
     max_delay: float = 300.0,
     exponential_base: float = 2.0,
@@ -32,7 +32,7 @@ def retry_on_rate_limit(
     - Implements exponential backoff for other transient errors
 
     Args:
-        max_retries: Maximum number of retry attempts (default: 3)
+        max_retries: Maximum number of retry attempts (default: 100)
         initial_delay: Initial delay in seconds between retries (default: 10.0)
         max_delay: Maximum delay in seconds between retries (default: 300.0)
         exponential_base: Base for exponential backoff calculation (default: 2.0)
