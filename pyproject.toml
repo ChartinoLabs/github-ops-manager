@@ -49,7 +49,8 @@ docs = [
 
 [tool.hatch.build.targets.wheel]
 packages = ["github_ops_manager"]
-# Ensure all subdirectories are included
+
+[tool.hatch.build]
 include = [
     "github_ops_manager/**/*.py",
     "github_ops_manager/py.typed",
