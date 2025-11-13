@@ -473,13 +473,36 @@ class GitHubKitAdapter(GitHubClientBase):
         return response.parsed_data
 
     async def get_file_content_from_pull_request(self, file_path: str, branch: str) -> str:
-        """Get the content of a file from a specific branch (typically the PR's head branch)."""
+        """Get the content of a file from a specific branch (typically the PR's head branch).
+
+        Handles both small files (inline base64 content) and large files (> 1MB, via download_url).
+        """
         response = await self.client.rest.repos.async_get_content(
             owner=self.owner,
             repo=self.repo_name,
             path=file_path,
             ref=branch,
         )
+
+        # For large files (> 1MB), GitHub API returns content as None and provides download_url
+        if response.parsed_data.content is None or response.parsed_data.content == "":
+            download_url = getattr(response.parsed_data, "download_url", None)
+            if download_url:
+                logger.info(
+                    "File too large for inline content, using download_url",
+                    file_path=file_path,
+                    download_url=download_url,
+                )
+                # Use httpx to download the raw file content
+                import httpx
+
+                async with httpx.AsyncClient() as client:
+                    download_response = await client.get(download_url)
+                    download_response.raise_for_status()
+                    return download_response.text
+            else:
+                raise ValueError(f"File content is empty and no download_url provided for {file_path}")
+
         return base64.b64decode(response.parsed_data.content).decode("utf-8")
 
     # Release/Tag Operations
