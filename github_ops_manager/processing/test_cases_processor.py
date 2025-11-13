@@ -226,11 +226,29 @@ def save_test_cases_yaml(filepath: Path, data: dict[str, Any]) -> bool:
                     )
                     return False
 
-        with open(filepath, "w", encoding="utf-8") as f:
-            yaml.dump(data, f)
+        # CRITICAL: Use atomic write to prevent data loss if yaml.dump() fails
+        # Write to temporary file first, then rename atomically
+        import os
+        import tempfile
 
-        logger.info("Saved test cases YAML", filepath=str(filepath))
-        return True
+        temp_fd, temp_path = tempfile.mkstemp(dir=filepath.parent, prefix=f".{filepath.name}.", suffix=".tmp")
+        try:
+            with os.fdopen(temp_fd, "w", encoding="utf-8") as f:
+                yaml.dump(data, f)
+
+            # Atomic rename - if this fails, original file is untouched
+            os.replace(temp_path, filepath)
+
+            logger.info("Saved test cases YAML", filepath=str(filepath))
+            return True
+
+        except Exception as e:
+            # Clean up temp file if something went wrong
+            try:
+                os.unlink(temp_path)
+            except Exception:
+                pass
+            raise e
 
     except Exception as e:
         logger.error("Failed to save test cases YAML", filepath=str(filepath), error=str(e))
