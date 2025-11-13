@@ -208,6 +208,24 @@ def save_test_cases_yaml(filepath: Path, data: dict[str, Any]) -> bool:
         True if save succeeded, False otherwise
     """
     try:
+        # Safety check: prevent wiping out files with data by replacing with empty test_cases
+        if filepath.exists():
+            # Load existing file to check if it has content
+            existing_data = load_test_cases_yaml(filepath)
+            if existing_data and "test_cases" in existing_data:
+                existing_test_cases = existing_data.get("test_cases", [])
+                new_test_cases = data.get("test_cases", [])
+
+                # If existing file has test cases but new data has none, refuse to save
+                if len(existing_test_cases) > 0 and len(new_test_cases) == 0:
+                    logger.error(
+                        "Refusing to save: would wipe out existing test cases",
+                        filepath=str(filepath),
+                        existing_count=len(existing_test_cases),
+                        new_count=len(new_test_cases),
+                    )
+                    return False
+
         with open(filepath, "w", encoding="utf-8") as f:
             yaml.dump(data, f)
 
