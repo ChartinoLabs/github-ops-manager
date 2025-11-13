@@ -172,16 +172,25 @@ async def create_tracking_issue_for_catalog_pr(
         if data and "test_cases" in data:
             # Find the test case and update it
             # Match by title since that's unique and reliable
+            test_case_found = False
             for tc in data["test_cases"]:
                 if tc.get("title") == test_case_title:
                     update_test_case_with_issue_metadata(tc, issue.number, issue.html_url)
+                    test_case_found = True
                     break
 
-            # Save back to file
-            if save_test_cases_yaml(source_file, data):
-                logger.info("Successfully wrote project issue metadata back to test case file", source_file=str(source_file))
+            # Save back to file ONLY if we found and updated a test case
+            if test_case_found:
+                if save_test_cases_yaml(source_file, data):
+                    logger.info("Successfully wrote project issue metadata back to test case file", source_file=str(source_file))
+                else:
+                    logger.error("Failed to save test case file", source_file=str(source_file))
             else:
-                logger.error("Failed to save test case file", source_file=str(source_file))
+                logger.warning(
+                    "Test case not found in source file, skipping save to prevent data loss",
+                    source_file=str(source_file),
+                    test_case_title=test_case_title,
+                )
         else:
             logger.warning("Could not load test cases from source file", source_file=str(source_file))
     else:
