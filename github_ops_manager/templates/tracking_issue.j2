@@ -8,12 +8,14 @@
 ## Test Requirement
 
 ```yaml
-purpose: {{ test_requirement.purpose }}
+purpose: |
+{{ test_requirement.purpose | indent(2, first=True) }}
 commands:
 {% for cmd in test_requirement.commands -%}
-  - {{ cmd }}
+  - "{{ cmd }}"
 {% endfor -%}
-pass_criteria: {{ test_requirement.pass_criteria }}
+pass_criteria: |
+{{ test_requirement.pass_criteria | indent(2, first=True) }}
 sample_parameters: |
 {{ test_requirement.sample_parameters | indent(2, first=True) }}
 parameters_to_parsed_data_mapping: |
