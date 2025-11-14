@@ -122,6 +122,24 @@ async def create_tracking_issue_for_catalog_pr(
 
     title = f"Review Catalog PR and Learn Parameters: {test_case_title}"
 
+    # Extract test requirement data from test case
+    # Commands list should only contain command strings, not full command objects
+    commands_list = []
+    if "commands" in test_case:
+        for cmd in test_case["commands"]:
+            if isinstance(cmd, dict):
+                commands_list.append(cmd.get("command", ""))
+            else:
+                commands_list.append(str(cmd))
+
+    test_requirement = {
+        "purpose": test_case.get("purpose", ""),
+        "commands": commands_list,
+        "pass_criteria": test_case.get("pass_criteria", ""),
+        "sample_parameters": test_case.get("jobfile_parameters", ""),
+        "parameters_to_parsed_data_mapping": test_case.get("jobfile_parameters_mapping", ""),
+    }
+
     # Load and render the tracking issue template
     template = load_tracking_issue_template()
     body = template.render(
@@ -133,6 +151,7 @@ async def create_tracking_issue_for_catalog_pr(
         test_case_title=test_case_title,  # Original title with OS tag for display
         test_case_title_clean=clean_title,  # Clean title for CLI commands
         os_name=os_name.upper(),
+        test_requirement=test_requirement,
     )
 
     logger.info(

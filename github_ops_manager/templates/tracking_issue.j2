@@ -5,6 +5,21 @@
 **Catalog Branch**: `{{ catalog_branch }}`
 **Operating System**: {{ os_name }}
 
+## Test Requirement
+
+```yaml
+purpose: {{ test_requirement.purpose }}
+commands:
+{% for cmd in test_requirement.commands -%}
+  - {{ cmd }}
+{% endfor -%}
+pass_criteria: {{ test_requirement.pass_criteria }}
+sample_parameters: |
+{{ test_requirement.sample_parameters | indent(2, first=True) }}
+parameters_to_parsed_data_mapping: |
+{{ test_requirement.parameters_to_parsed_data_mapping | indent(2, first=True) }}
+```
+
 ### Tasks
 
 - [ ] Create a new branch in this project repository to track your test case parameter additions. Suggested branch name:
