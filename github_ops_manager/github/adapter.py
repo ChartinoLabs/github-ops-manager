@@ -690,8 +690,10 @@ class GitHubKitAdapter(GitHubClientBase):
             base_sha = pr.base.sha
             head_sha = pr.head.sha
 
-            # Use compare API
-            compare_response = await self.client.rest.repos.async_compare_commits(owner=self.owner, repo=self.repo_name, base=base_sha, head=head_sha)
+            # Use compare API with proper basehead parameter format (BASE...HEAD with three dots)
+            # This matches the GitHub API endpoint: /repos/{owner}/{repo}/compare/{basehead}
+            basehead = f"{base_sha}...{head_sha}"
+            compare_response = await self.client.rest.repos.async_compare_commits(owner=self.owner, repo=self.repo_name, basehead=basehead)
             compare_data = compare_response.json()
 
             if not isinstance(compare_data, dict):
