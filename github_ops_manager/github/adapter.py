@@ -593,7 +593,8 @@ class GitHubKitAdapter(GitHubClientBase):
             commits_response = await self.client.rest.pulls.async_list_commits(
                 owner=self.owner, repo=self.repo_name, pull_number=pr_number, per_page=100
             )
-            commits = commits_response.parsed_data
+            # Use raw JSON to avoid Pydantic validation issues with commit verification field
+            commits = commits_response.json()
 
             if not commits:
                 logger.debug("Method 2: No commits found in PR", owner=self.owner, repo=self.repo_name, pr_number=pr_number)
@@ -603,7 +604,8 @@ class GitHubKitAdapter(GitHubClientBase):
             files_dict: dict[str, dict[str, Any]] = {}
 
             for commit in commits:
-                commit_sha = commit.sha
+                # Handle commit as dict (from JSON) instead of Pydantic object
+                commit_sha = commit.get("sha") if isinstance(commit, dict) else getattr(commit, "sha", None)
                 try:
                     # Get files for this commit
                     commit_stats = await self.get_commit_stats(commit_sha)
