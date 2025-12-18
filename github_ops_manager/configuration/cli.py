@@ -116,9 +116,10 @@ def tac_sync_issues_cli(
                     f"path of '{test_case_definition.generated_script_path}' - "
                     "creating a Pull Request"
                 )
+                script_path = test_automation_scripts_directory / test_case_definition.generated_script_path
                 new_issue.pull_request = PullRequestModel(
                     title=f"GenAI, Review: {test_case_definition.title}",
-                    files=[test_case_definition.generated_script_path],
+                    files=[str(script_path)],
                 )
             desired_issues_yaml_model.issues.append(new_issue)
         else:
