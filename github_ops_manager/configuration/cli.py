@@ -17,8 +17,10 @@ from github_ops_manager.github.adapter import GitHubKitAdapter
 from github_ops_manager.processing.yaml_processor import YAMLProcessor
 from github_ops_manager.schemas.default_issue import IssueModel, IssuesYAMLModel, PullRequestModel
 from github_ops_manager.synchronize.driver import run_process_issues_workflow
+from github_ops_manager.utils.constants import DEFAULT_MAX_ISSUE_BODY_LENGTH
 from github_ops_manager.utils.tac import find_issue_with_title
 from github_ops_manager.utils.templates import construct_jinja2_template_from_file, render_template_with_model
+from github_ops_manager.utils.truncation import truncate_test_case_outputs
 from github_ops_manager.utils.yaml import dump_yaml_to_file, load_test_case_definitions_from_directory, load_yaml_file
 
 load_dotenv()
@@ -77,6 +79,10 @@ def tac_sync_issues_cli(
     # can be constructed.
     template = construct_jinja2_template_from_file(Path(__file__).parent.parent / "templates" / "tac_issues_body.j2")
 
+    # Get max body length from environment variable or use default
+    max_body_length = int(os.getenv("GITHUB_MAX_ISSUE_BODY_LENGTH", str(DEFAULT_MAX_ISSUE_BODY_LENGTH)))
+    typer.echo(f"Using max issue body length: {max_body_length}")
+
     # Iterate through the test case definitions and ensure matching issues
     # exist in the YAML file.
     for test_case_definition in testing_as_code_test_case_definitions_model.test_cases:
@@ -100,10 +106,13 @@ def tac_sync_issues_cli(
             # script will have a control label called "script-already-created".
             # Additionally, a field named "generated_script_path" will be
             # populated with the path to the created test automation script.
+            #
+            # Truncate outputs if they would exceed the max body length
+            truncated_test_case = truncate_test_case_outputs(test_case_definition, max_body_length)
             new_issue = IssueModel(
                 title=test_case_definition.title,
                 body=render_template_with_model(
-                    model=test_case_definition,
+                    model=truncated_test_case,
                     template=template,
                 ),
                 labels=test_case_definition.labels,
@@ -116,15 +125,18 @@ def tac_sync_issues_cli(
                     f"path of '{test_case_definition.generated_script_path}' - "
                     "creating a Pull Request"
                 )
+                script_path = test_automation_scripts_directory / test_case_definition.generated_script_path
                 new_issue.pull_request = PullRequestModel(
                     title=f"GenAI, Review: {test_case_definition.title}",
-                    files=[test_case_definition.generated_script_path],
+                    files=[str(script_path)],
                 )
             desired_issues_yaml_model.issues.append(new_issue)
         else:
             # Update the existing issue based upon the test case definition.
+            # Truncate outputs if they would exceed the max body length
+            truncated_test_case = truncate_test_case_outputs(test_case_definition, max_body_length)
             existing_issue.body = render_template_with_model(
-                model=test_case_definition,
+                model=truncated_test_case,
                 template=template,
             )
             existing_issue.labels = test_case_definition.labels
