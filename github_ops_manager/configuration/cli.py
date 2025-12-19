@@ -208,6 +208,175 @@ def repo_callback(
 repo_app.callback()(repo_callback)
 
 
+# --- New unified test requirements processing command ---
+@repo_app.command(name="process-test-requirements")
+def process_test_requirements_cli(
+    ctx: typer.Context,
+    test_cases_dir: Annotated[
+        Path,
+        Argument(
+            envvar="TEST_CASES_DIR",
+            help="Directory containing test_cases.yaml files.",
+        ),
+    ],
+    base_directory: Annotated[
+        Path,
+        Option(
+            envvar="BASE_DIRECTORY",
+            help="Base directory for resolving script file paths. Defaults to parent of test_cases_dir.",
+        ),
+    ] = None,
+    issue_template: Annotated[
+        Path | None,
+        Option(
+            envvar="ISSUE_TEMPLATE",
+            help="Path to Jinja2 template for issue bodies.",
+        ),
+    ] = None,
+    issue_labels: Annotated[
+        str | None,
+        Option(
+            envvar="ISSUE_LABELS",
+            help="Comma-separated list of labels to apply to issues.",
+        ),
+    ] = None,
+    catalog_repo: Annotated[
+        str,
+        Option(
+            envvar="CATALOG_REPO",
+            help="Catalog repository name (owner/repo) for catalog-destined test cases.",
+        ),
+    ] = "Testing-as-Code/tac-catalog",
+) -> None:
+    """Process test requirements directly from test_cases.yaml files.
+
+    This command eliminates the need for issues.yaml by:
+    - Reading test requirements directly from test_cases.yaml files
+    - Creating GitHub issues for test cases that don't have issue metadata
+    - Creating PRs (project or catalog) for test cases with generated scripts
+    - Writing metadata back to test_cases.yaml files
+
+    For each test case:
+    - If project_issue_number is missing, creates an issue
+    - If generated_script_path exists and PR metadata is missing:
+      - Non-catalog: creates PR in project repo
+      - Catalog-destined: creates PR in catalog repo
+    """
+    from github_ops_manager.synchronize.test_requirements import process_test_requirements
+
+    repo: str = ctx.obj["repo"]
+    github_api_url: str = ctx.obj["github_api_url"]
+    github_pat_token: str = ctx.obj["github_pat_token"]
+    github_app_id: int = ctx.obj["github_app_id"]
+    github_app_private_key_path: Path | None = ctx.obj["github_app_private_key_path"]
+    github_app_installation_id: int = ctx.obj["github_app_installation_id"]
+    github_auth_type = ctx.obj["github_auth_type"]
+
+    # Validate test cases directory
+    if not test_cases_dir.exists():
+        typer.echo(f"Test cases directory not found: {test_cases_dir.absolute()}", err=True)
+        raise typer.Exit(1)
+
+    if not test_cases_dir.is_dir():
+        typer.echo(f"Test cases path is not a directory: {test_cases_dir.absolute()}", err=True)
+        raise typer.Exit(1)
+
+    # Default base directory to parent of test_cases_dir
+    if base_directory is None:
+        base_directory = test_cases_dir.parent
+
+    typer.echo(f"Processing test requirements from: {test_cases_dir.absolute()}")
+    typer.echo(f"Base directory for scripts: {base_directory.absolute()}")
+
+    # Parse labels
+    parsed_labels = None
+    if issue_labels:
+        parsed_labels = [label.strip() for label in issue_labels.split(",") if label.strip()]
+
+    # Use default template if not specified
+    if issue_template is None:
+        issue_template = Path(__file__).parent.parent / "templates" / "tac_issues_body.j2"
+        if issue_template.exists():
+            typer.echo(f"Using default issue template: {issue_template}")
+        else:
+            issue_template = None
+            typer.echo("No issue template specified, using simple default body")
+
+    # Build repo URL
+    if "api.github.com" in github_api_url:
+        base_url = "https://github.com"
+    else:
+        base_url = github_api_url.replace("/api/v3", "").replace("/api", "").rstrip("/")
+    project_repo_url = f"{base_url}/{repo}"
+    catalog_repo_url = f"{base_url}/{catalog_repo}"
+
+    async def run_processing() -> dict:
+        # Create project adapter
+        project_adapter = await GitHubKitAdapter.create(
+            repo=repo,
+            github_auth_type=github_auth_type,
+            github_pat_token=github_pat_token,
+            github_app_id=github_app_id,
+            github_app_private_key_path=github_app_private_key_path,
+            github_app_installation_id=github_app_installation_id,
+            github_api_url=github_api_url,
+        )
+
+        # Get project default branch
+        project_repo_info = await project_adapter.get_repository()
+        project_default_branch = project_repo_info.default_branch
+
+        typer.echo(f"Project repository: {repo} (default branch: {project_default_branch})")
+
+        # Create catalog adapter
+        catalog_adapter = await GitHubKitAdapter.create(
+            repo=catalog_repo,
+            github_auth_type=github_auth_type,
+            github_pat_token=github_pat_token,
+            github_app_id=github_app_id,
+            github_app_private_key_path=github_app_private_key_path,
+            github_app_installation_id=github_app_installation_id,
+            github_api_url=github_api_url,
+        )
+
+        # Get catalog default branch
+        catalog_repo_info = await catalog_adapter.get_repository()
+        catalog_default_branch = catalog_repo_info.default_branch
+
+        typer.echo(f"Catalog repository: {catalog_repo} (default branch: {catalog_default_branch})")
+
+        # Process test requirements
+        return await process_test_requirements(
+            test_cases_dir=test_cases_dir,
+            base_directory=base_directory,
+            project_adapter=project_adapter,
+            project_default_branch=project_default_branch,
+            project_repo_url=project_repo_url,
+            catalog_adapter=catalog_adapter,
+            catalog_default_branch=catalog_default_branch,
+            catalog_repo_url=catalog_repo_url,
+            issue_template_path=issue_template,
+            issue_labels=parsed_labels,
+        )
+
+    results = asyncio.run(run_processing())
+
+    # Report results
+    typer.echo("\n--- Processing Results ---")
+    typer.echo(f"Total test cases: {results['total_test_cases']}")
+    typer.echo(f"Issues created: {results['issues_created']}")
+    typer.echo(f"Project PRs created: {results['project_prs_created']}")
+    typer.echo(f"Catalog PRs created: {results['catalog_prs_created']}")
+
+    if results["errors"]:
+        typer.echo(f"\nErrors ({len(results['errors'])}):", err=True)
+        for error in results["errors"]:
+            typer.echo(f"  - {error}", err=True)
+        raise typer.Exit(1)
+
+    typer.echo("\nProcessing completed successfully!")
+
+
 # --- Move process-issues under repo_app ---
 @repo_app.command(name="process-issues")
 def process_issues_cli(
