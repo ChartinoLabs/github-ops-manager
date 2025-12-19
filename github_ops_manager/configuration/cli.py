@@ -247,6 +247,15 @@ def process_test_requirements_cli(
             help="Catalog repository name (owner/repo) for catalog-destined test cases.",
         ),
     ] = "Testing-as-Code/tac-catalog",
+    # ⚠️ DEPRECATED: Migration option - remove post-migration
+    issues_yaml: Annotated[
+        Path | None,
+        Option(
+            envvar="ISSUES_YAML",
+            help="[DEPRECATED] Path to legacy issues.yaml file for migration. "
+            "If provided, migrates existing issue/PR metadata to test_cases.yaml before processing.",
+        ),
+    ] = None,
 ) -> None:
     """Process test requirements directly from test_cases.yaml files.
 
@@ -261,6 +270,9 @@ def process_test_requirements_cli(
     - If generated_script_path exists and PR metadata is missing:
       - Non-catalog: creates PR in project repo
       - Catalog-destined: creates PR in catalog repo
+
+    MIGRATION: If --issues-yaml is provided, existing metadata from issues.yaml
+    will be migrated to test_cases.yaml before normal processing begins.
     """
     from github_ops_manager.synchronize.test_requirements import process_test_requirements
 
@@ -309,6 +321,36 @@ def process_test_requirements_cli(
         base_url = github_api_url.replace("/api/v3", "").replace("/api", "").rstrip("/")
     project_repo_url = f"{base_url}/{repo}"
     catalog_repo_url = f"{base_url}/{catalog_repo}"
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # ⚠️ DEPRECATED: issues.yaml migration - TODO: Remove this block post-migration
+    # ═══════════════════════════════════════════════════════════════════════════
+    if issues_yaml is not None:
+        from github_ops_manager.synchronize.issues_yaml_migration import run_issues_yaml_migration
+
+        typer.echo("\n--- Running issues.yaml Migration (DEPRECATED) ---")
+        typer.echo(f"Migrating from: {issues_yaml.absolute()}")
+
+        migration_results = run_issues_yaml_migration(
+            issues_yaml_path=issues_yaml,
+            test_cases_dir=test_cases_dir,
+            repo_url=project_repo_url,
+        )
+
+        typer.echo("Migration complete:")
+        typer.echo(f"  Total issues in issues.yaml: {migration_results['total_issues']}")
+        typer.echo(f"  Already migrated: {migration_results['already_migrated']}")
+        typer.echo(f"  Newly migrated: {migration_results['newly_migrated']}")
+        typer.echo(f"  Skipped (no match): {migration_results['skipped_no_match']}")
+        typer.echo(f"  Skipped (no metadata): {migration_results['skipped_no_metadata']}")
+
+        if migration_results["errors"]:
+            typer.echo(f"\nMigration warnings ({len(migration_results['errors'])}):", err=True)
+            for error in migration_results["errors"]:
+                typer.echo(f"  - {error}", err=True)
+
+        typer.echo("")  # Blank line before main processing
+    # ═══════════════════════════════════════════════════════════════════════════
 
     async def run_processing() -> dict:
         # Create project adapter
