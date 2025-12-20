@@ -25,7 +25,9 @@ from github_ops_manager.processing.test_cases_processor import (
     update_test_case_with_pr_metadata,
     update_test_case_with_project_pr_metadata,
 )
+from github_ops_manager.utils.constants import DEFAULT_MAX_ISSUE_BODY_LENGTH
 from github_ops_manager.utils.templates import construct_jinja2_template_from_file
+from github_ops_manager.utils.truncation import truncate_data_dict_outputs
 
 logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)
 
@@ -318,12 +320,14 @@ def _convert_to_dict(obj: Any) -> Any:
 def render_issue_body_for_test_case(
     test_case: dict[str, Any],
     template: jinja2.Template,
+    max_body_length: int | None = None,
 ) -> str:
     """Render issue body for a test case using the template.
 
     Args:
         test_case: Test case dictionary with all fields
         template: Jinja2 template for issue body
+        max_body_length: Optional max length for issue body (truncates outputs if needed)
 
     Returns:
         Rendered issue body string
@@ -341,6 +345,10 @@ def render_issue_body_for_test_case(
         "jobfile_parameters_mapping": test_case.get("jobfile_parameters_mapping", ""),
         "commands": commands_as_dicts,
     }
+
+    # Apply truncation to command outputs if max_body_length is specified
+    if max_body_length is not None:
+        render_context = truncate_data_dict_outputs(render_context, max_body_length)
 
     try:
         return template.render(**render_context)
@@ -360,6 +368,7 @@ async def process_test_requirements(
     catalog_repo_url: str | None = None,
     issue_template_path: Path | None = None,
     issue_labels: list[str] | None = None,
+    max_body_length: int = DEFAULT_MAX_ISSUE_BODY_LENGTH,
 ) -> dict[str, Any]:
     """Process all test requirements: create issues and PRs as needed.
 
@@ -377,6 +386,7 @@ async def process_test_requirements(
         catalog_repo_url: Optional full URL to catalog repository
         issue_template_path: Optional path to Jinja2 template for issue bodies
         issue_labels: Optional list of labels to apply to issues
+        max_body_length: Maximum issue body length (truncates outputs if exceeded)
 
     Returns:
         Summary dict with counts and results
@@ -418,7 +428,7 @@ async def process_test_requirements(
         if requires_issue_creation(test_case):
             if template:
                 try:
-                    issue_body = render_issue_body_for_test_case(test_case, template)
+                    issue_body = render_issue_body_for_test_case(test_case, template, max_body_length=max_body_length)
                 except Exception as e:
                     logger.error("Failed to render issue body", title=title, error=str(e))
                     results["errors"].append(f"Failed to render issue body for {title}: {e}")
