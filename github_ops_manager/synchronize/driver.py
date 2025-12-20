@@ -10,8 +10,9 @@ from github_ops_manager.configuration.models import GitHubAuthenticationType
 from github_ops_manager.github.adapter import GitHubKitAdapter
 from github_ops_manager.processing.yaml_processor import YAMLProcessingError, YAMLProcessor
 from github_ops_manager.synchronize.issues import render_issue_bodies, sync_github_issues
-from github_ops_manager.synchronize.pull_requests import sync_github_pull_requests
+from github_ops_manager.synchronize.pull_requests import create_catalog_pull_requests, sync_github_pull_requests
 from github_ops_manager.synchronize.results import AllIssueSynchronizationResults, ProcessIssuesResult
+from github_ops_manager.synchronize.tracking_issues import create_tracking_issues_for_catalog_prs
 
 logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)
 
@@ -27,8 +28,16 @@ async def run_process_issues_workflow(
     yaml_path: Path,
     raise_on_yaml_error: bool = False,
     testing_as_code_workflow: bool = False,
+    catalog_repo: str = "Testing-as-Code/tac-catalog",
+    test_cases_dir: Path = Path("workspace/test_cases/"),
+    create_tracking_issues: bool = False,
+    tracking_issue_labels: list[str] | None = None,
 ) -> ProcessIssuesResult:
-    """Run the process-issues workflow: load issues from YAML and return them/errors."""
+    """Run the process-issues workflow: load issues from YAML and return them/errors.
+
+    Supports both project and catalog-destined test cases in the same run.
+    Issues with catalog_destined=true will have PRs created against the catalog repository.
+    """
     processor = YAMLProcessor(raise_on_error=raise_on_yaml_error)
     try:
         issues_model = processor.load_issues_model([str(yaml_path)])
@@ -39,7 +48,7 @@ async def run_process_issues_workflow(
     if issues_model.issue_template:
         issues_model = await render_issue_bodies(issues_model)
 
-    # Set up GitHub adapter.
+    # Set up GitHub adapter for project repository.
     github_adapter = await GitHubKitAdapter.create(
         repo=repo,
         github_auth_type=github_auth_type,
@@ -116,6 +125,17 @@ async def run_process_issues_workflow(
 
     start_time = time.time()
     logger.info("Processing pull requests", start_time=start_time)
+
+    # Build catalog repo URL for metadata writeback
+    # e.g., "https://api.github.com" -> "https://github.com"
+    # or "https://wwwin-github.cisco.com/api/v3" -> "https://wwwin-github.cisco.com"
+    if "api.github.com" in github_api_url:
+        base_url = "https://github.com"
+    else:
+        # For GitHub Enterprise, remove /api/v3 suffix and any trailing slashes
+        base_url = github_api_url.replace("/api/v3", "").replace("/api", "").rstrip("/")
+    catalog_repo_url = f"{base_url}/{catalog_repo}"
+
     await sync_github_pull_requests(
         issues_model.issues,
         refreshed_issues,
@@ -124,8 +144,86 @@ async def run_process_issues_workflow(
         default_branch,
         yaml_dir,
         testing_as_code_workflow=testing_as_code_workflow,
+        # Catalog configuration for catalog-destined issues
+        catalog_repo=catalog_repo,
+        catalog_repo_url=catalog_repo_url,
+        test_cases_dir=test_cases_dir,
+        # Auth parameters for creating catalog adapter
+        github_auth_type=github_auth_type,
+        github_pat_token=github_pat_token,
+        github_app_id=github_app_id,
+        github_app_private_key_path=github_app_private_key_path,
+        github_app_installation_id=github_app_installation_id,
+        github_api_url=github_api_url,
     )
     end_time = time.time()
     total_time = end_time - start_time
     logger.info("Processed pull requests", start_time=start_time, end_time=end_time, duration=round(total_time, 2))
+
+    # Create standalone catalog PRs (no issues) for catalog-destined test cases
+    if test_cases_dir.exists():
+        logger.info("Processing catalog-destined test cases from test_cases.yaml files", test_cases_dir=str(test_cases_dir))
+
+        # Create adapter for catalog repository
+        catalog_adapter = await GitHubKitAdapter.create(
+            repo=catalog_repo,
+            github_auth_type=github_auth_type,
+            github_pat_token=github_pat_token,
+            github_app_id=github_app_id,
+            github_app_private_key_path=github_app_private_key_path,
+            github_app_installation_id=github_app_installation_id,
+            github_api_url=github_api_url,
+        )
+
+        # Get catalog repository info
+        catalog_repo_info = await catalog_adapter.get_repository()
+        catalog_default_branch = catalog_repo_info.default_branch
+
+        # Base directory for resolving robot file paths
+        # Robot files are typically in workspace/ directory, which is parent of test_cases_dir
+        base_directory = test_cases_dir.parent if test_cases_dir.name != "." else test_cases_dir
+
+        logger.info(
+            "Creating catalog PRs",
+            catalog_repo=catalog_repo,
+            catalog_default_branch=catalog_default_branch,
+            base_directory=str(base_directory),
+        )
+
+        start_catalog_time = time.time()
+        catalog_pr_data = await create_catalog_pull_requests(
+            test_cases_dir=test_cases_dir,
+            base_directory=base_directory,
+            catalog_repo=catalog_repo,
+            catalog_repo_url=catalog_repo_url,
+            catalog_default_branch=catalog_default_branch,
+            github_adapter=catalog_adapter,
+        )
+        end_catalog_time = time.time()
+        catalog_duration = end_catalog_time - start_catalog_time
+        logger.info("Completed catalog PR creation", duration=round(catalog_duration, 2))
+
+        # Create tracking issues in project repo for catalog PRs
+        if create_tracking_issues and catalog_pr_data:
+            logger.info(
+                "Creating tracking issues in project repository",
+                catalog_pr_count=len(catalog_pr_data),
+                repo=repo,
+            )
+
+            start_tracking_time = time.time()
+            tracking_issues = await create_tracking_issues_for_catalog_prs(
+                github_adapter=github_adapter,  # Project repo adapter
+                catalog_pr_data=catalog_pr_data,
+                catalog_repo=catalog_repo,
+                labels=tracking_issue_labels,
+            )
+            end_tracking_time = time.time()
+            tracking_duration = end_tracking_time - start_tracking_time
+            logger.info(
+                "Completed tracking issue creation",
+                duration=round(tracking_duration, 2),
+                issues_created=len(tracking_issues),
+            )
+
     return ProcessIssuesResult(issue_sync_results)

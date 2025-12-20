@@ -2,12 +2,23 @@
 
 import re
 from pathlib import Path
+from typing import Any
 
 import structlog
 from githubkit.versions.latest.models import Issue, PullRequest
 from structlog.contextvars import bound_contextvars
 
 from github_ops_manager.github.adapter import GitHubKitAdapter
+from github_ops_manager.processing.test_cases_processor import (
+    extract_os_from_robot_content,
+    extract_os_from_robot_filename,
+    find_test_cases_files,
+    load_catalog_destined_test_cases,
+    load_test_cases_yaml,
+    normalize_os_to_catalog_dir,
+    save_test_cases_yaml,
+    update_test_case_with_pr_metadata,
+)
 from github_ops_manager.schemas.default_issue import IssueModel, PullRequestModel
 from github_ops_manager.synchronize.models import SyncDecision
 from github_ops_manager.synchronize.utils import compare_github_field, compare_label_sets
@@ -74,8 +85,19 @@ async def get_pull_request_associated_with_issue(issue: Issue, existing_pull_req
     return None
 
 
-async def get_desired_pull_request_file_content(base_directory: Path, desired_issue: IssueModel) -> list[tuple[str, str]]:
-    """Get the content of the desired pull request files."""
+async def get_desired_pull_request_file_content(
+    base_directory: Path, desired_issue: IssueModel, catalog_workflow: bool = False
+) -> list[tuple[str, str]]:
+    """Get the content of the desired pull request files.
+
+    Args:
+        base_directory: Base directory where files are located
+        desired_issue: Issue model containing pull request information
+        catalog_workflow: If True, transform .robot file paths to catalog structure
+
+    Returns:
+        List of tuples (file_path_in_pr, file_content)
+    """
     if desired_issue.pull_request is None:
         raise ValueError("Desired issue has no pull request associated with it")
     files: list[tuple[str, str]] = []
@@ -83,7 +105,39 @@ async def get_desired_pull_request_file_content(base_directory: Path, desired_is
         file_path = base_directory / file
         logger.info("Checking if file exists", file=file, file_path=str(file_path), base_directory=str(base_directory))
         if file_path.exists():
-            files.append((file, file_path.read_text(encoding="utf-8")))
+            file_content = file_path.read_text(encoding="utf-8")
+
+            # Transform path if catalog workflow and file is a robot file
+            if catalog_workflow and file.endswith(".robot"):
+                filename = Path(file).name
+
+                # Try to extract OS from Test Tags in robot file content (preferred)
+                os_name = extract_os_from_robot_content(file_content)
+                extraction_method = "test_tags"
+
+                # Fall back to filename parsing if Test Tags parsing fails
+                if not os_name:
+                    logger.info("Test Tags parsing failed, falling back to filename parsing", filename=filename)
+                    os_name = extract_os_from_robot_filename(filename)
+                    extraction_method = "filename"
+
+                if os_name:
+                    catalog_dir = normalize_os_to_catalog_dir(os_name)
+                    catalog_path = f"catalog/{catalog_dir}/{filename}"
+                    logger.info(
+                        "Transformed robot file path for catalog",
+                        original_path=file,
+                        catalog_path=catalog_path,
+                        os_name=os_name,
+                        catalog_dir=catalog_dir,
+                        extraction_method=extraction_method,
+                    )
+                    files.append((catalog_path, file_content))
+                else:
+                    logger.warning("Could not extract OS from robot file, using original path", filename=filename)
+                    files.append((file, file_content))
+            else:
+                files.append((file, file_content))
         else:
             logger.warning("Pull Request file not found", file=file, issue_title=desired_issue.title)
     return files
@@ -155,9 +209,23 @@ async def decide_github_pull_request_sync_action(desired_issue: IssueModel, exis
 
 
 async def commit_files_to_branch(
-    desired_issue: IssueModel, existing_issue: Issue, desired_branch_name: str, base_directory: Path, github_adapter: GitHubKitAdapter
+    desired_issue: IssueModel,
+    existing_issue: Issue,
+    desired_branch_name: str,
+    base_directory: Path,
+    github_adapter: GitHubKitAdapter,
+    catalog_workflow: bool = False,
 ) -> None:
-    """Commit files to a branch."""
+    """Commit files to a branch.
+
+    Args:
+        desired_issue: Issue model containing pull request information
+        existing_issue: GitHub Issue object
+        desired_branch_name: Name of the branch to commit to
+        base_directory: Base directory where files are located
+        github_adapter: GitHub adapter for API calls
+        catalog_workflow: If True, transform robot file paths to catalog structure
+    """
     if desired_issue.pull_request is None:
         raise ValueError("Desired issue has no pull request associated with it")
 
@@ -166,7 +234,7 @@ async def commit_files_to_branch(
     logger.info("Preparing files to commit for pull request", issue_title=desired_issue.title, branch=desired_branch_name)
     for file_path in desired_issue.pull_request.files:
         try:
-            files_to_commit = await get_desired_pull_request_file_content(base_directory, desired_issue)
+            files_to_commit = await get_desired_pull_request_file_content(base_directory, desired_issue, catalog_workflow)
         except FileNotFoundError as exc:
             logger.error("File for PR not found or unreadable", file=file_path, error=str(exc))
             missing_files.append(file_path)
@@ -182,6 +250,77 @@ async def commit_files_to_branch(
     await github_adapter.commit_files_to_branch(desired_branch_name, files_to_commit, commit_message)
 
 
+async def write_pr_metadata_to_test_cases(
+    pr: PullRequest,
+    catalog_repo_url: str,
+    test_cases_dir: Path,
+) -> None:
+    """Write PR metadata back to test_cases.yaml files after catalog PR creation.
+
+    Args:
+        pr: GitHub PullRequest object with created PR information
+        catalog_repo_url: Full URL to catalog repository
+        test_cases_dir: Directory containing test_cases.yaml files
+    """
+    logger.info("Writing PR metadata to test cases files", pr_number=pr.number, test_cases_dir=str(test_cases_dir))
+
+    # Get robot filename from PR files
+    pr_files = [f.filename for f in pr.changed_files] if hasattr(pr, "changed_files") else []
+    robot_files = [f for f in pr_files if f.endswith(".robot")]
+
+    if not robot_files:
+        logger.warning("No robot files found in PR, cannot write back metadata", pr_number=pr.number)
+        return
+
+    # For catalog PRs, the filename will be in format: catalog/<OS_NAME>/<filename>.robot
+    # We need to extract just the filename
+    robot_filename = Path(robot_files[0]).name
+
+    logger.info("Processing robot file for metadata writeback", robot_filename=robot_filename, pr_number=pr.number)
+
+    # Find test_cases.yaml files
+    test_case_files = find_test_cases_files(test_cases_dir)
+
+    if not test_case_files:
+        logger.warning("No test case files found in directory", test_cases_dir=str(test_cases_dir))
+        return
+
+    # Search through test case files for matching test case
+    for test_case_file in test_case_files:
+        data = load_test_cases_yaml(test_case_file)
+        if not data or "test_cases" not in data:
+            continue
+
+        test_cases = data["test_cases"]
+        if not isinstance(test_cases, list):
+            logger.warning("test_cases field is not a list", filepath=str(test_case_file))
+            continue
+
+        # Look for test case with matching generated_script_path
+        # The generated_script_path might be just the filename or include a directory
+        for test_case in test_cases:
+            generated_script_path = test_case.get("generated_script_path")
+            if generated_script_path and Path(generated_script_path).name == robot_filename:
+                logger.info(
+                    "Found matching test case, updating with PR metadata",
+                    test_case_file=str(test_case_file),
+                    generated_script_path=generated_script_path,
+                )
+
+                # Update test case with PR metadata
+                update_test_case_with_pr_metadata(test_case, pr, catalog_repo_url)
+
+                # Save updated YAML
+                if save_test_cases_yaml(test_case_file, data):
+                    logger.info("Successfully wrote PR metadata back to test case file", test_case_file=str(test_case_file))
+                    return
+                else:
+                    logger.error("Failed to save test case file", test_case_file=str(test_case_file))
+                    return
+
+    logger.warning("No matching test case found for robot file", robot_filename=robot_filename)
+
+
 async def sync_github_pull_request(
     desired_issue: IssueModel,
     existing_issue: Issue,
@@ -190,6 +329,9 @@ async def sync_github_pull_request(
     base_directory: Path,
     existing_pull_request: PullRequest | None = None,
     testing_as_code_workflow: bool = False,
+    catalog_workflow: bool = False,
+    catalog_repo_url: str | None = None,
+    test_cases_dir: Path | None = None,
 ) -> None:
     """Synchronize a specific pull request for an issue."""
     with bound_contextvars(
@@ -235,7 +377,7 @@ async def sync_github_pull_request(
                 logger.info("Branch already exists, skipping creation", branch=desired_branch_name)
 
             # Commit files to branch
-            await commit_files_to_branch(desired_issue, existing_issue, desired_branch_name, base_directory, github_adapter)
+            await commit_files_to_branch(desired_issue, existing_issue, desired_branch_name, base_directory, github_adapter, catalog_workflow)
 
             logger.info("Creating new PR for issue", branch=desired_branch_name, base_branch=default_branch)
             new_pr = await github_adapter.create_pull_request(
@@ -247,6 +389,11 @@ async def sync_github_pull_request(
             logger.info("Created new PR", pr_number=new_pr.number, branch=desired_branch_name)
             await github_adapter.set_labels_on_issue(new_pr.number, pr_labels)
             logger.info("Set labels on new PR", pr_number=new_pr.number, labels=pr_labels)
+
+            # Write PR metadata back to test_cases.yaml if catalog workflow
+            if catalog_workflow and catalog_repo_url and test_cases_dir:
+                logger.info("Catalog workflow enabled, writing PR metadata back to test cases")
+                await write_pr_metadata_to_test_cases(new_pr, catalog_repo_url, test_cases_dir)
         elif pr_sync_decision == SyncDecision.UPDATE:
             if existing_pull_request is None:
                 raise ValueError("Existing pull request not found")
@@ -257,12 +404,190 @@ async def sync_github_pull_request(
                 body=pr.body,
             )
             await github_adapter.set_labels_on_issue(existing_pull_request.number, pr_labels)
-            desired_file_data = await get_desired_pull_request_file_content(base_directory, desired_issue)
+            desired_file_data = await get_desired_pull_request_file_content(base_directory, desired_issue, catalog_workflow)
             pr_file_sync_decision = await decide_github_pull_request_file_sync_action(desired_file_data, existing_pull_request, github_adapter)
             if pr_file_sync_decision == SyncDecision.CREATE:
                 # The branch will already exist, so we don't need to create it.
                 # However, we do need to commit the files to the branch.
-                await commit_files_to_branch(desired_issue, existing_issue, desired_branch_name, base_directory, github_adapter)
+                await commit_files_to_branch(desired_issue, existing_issue, desired_branch_name, base_directory, github_adapter, catalog_workflow)
+
+
+async def create_catalog_pull_requests(
+    test_cases_dir: Path,
+    base_directory: Path,
+    catalog_repo: str,
+    catalog_repo_url: str,
+    catalog_default_branch: str,
+    github_adapter: GitHubKitAdapter,
+) -> list[dict[str, Any]]:
+    """Create standalone PRs for catalog-destined test cases (no issues).
+
+    Reads test_cases.yaml files directly and creates PRs in catalog repository
+    without creating issues. This is simpler than the full issue/PR workflow.
+
+    Args:
+        test_cases_dir: Directory containing test_cases.yaml files
+        base_directory: Base directory where robot files are located
+        catalog_repo: Catalog repository name (owner/repo)
+        catalog_repo_url: Full URL to catalog repository
+        catalog_default_branch: Default branch in catalog repository
+        github_adapter: GitHub adapter for catalog repository
+
+    Returns:
+        List of dicts with keys: pr, test_cases, os_name, branch_name, catalog_path
+    """
+    logger.info("Creating standalone catalog PRs", test_cases_dir=str(test_cases_dir), catalog_repo=catalog_repo)
+
+    # Load catalog-destined test cases from test_cases.yaml files
+    catalog_test_cases = load_catalog_destined_test_cases(test_cases_dir)
+
+    if not catalog_test_cases:
+        logger.info("No catalog-destined test cases found")
+        return []
+
+    logger.info("Found catalog-destined test cases to process", count=len(catalog_test_cases))
+
+    # Accumulate created PR data for tracking issue creation
+    created_pr_data = []
+
+    for test_case in catalog_test_cases:
+        title = test_case.get("title", "Untitled Test Case")
+        script_path = test_case.get("generated_script_path")
+        source_file = Path(test_case.get("_source_file"))
+
+        if not script_path:
+            logger.warning("Test case missing generated_script_path", title=title)
+            continue
+
+        logger.info("Processing catalog test case", title=title, script_path=script_path)
+
+        # Check if PR already exists
+        existing_pr_number = test_case.get("catalog_pr_number")
+        existing_pr_url = test_case.get("catalog_pr_url")
+
+        if existing_pr_number and existing_pr_url:
+            logger.info("PR already exists for test case, skipping", title=title, pr_number=existing_pr_number, pr_url=existing_pr_url)
+            continue
+
+        # Build file path
+        robot_file_path = base_directory / script_path
+        if not robot_file_path.exists():
+            logger.error("Robot file not found", file=str(robot_file_path), title=title)
+            continue
+
+        # Read robot file content
+        robot_content = robot_file_path.read_text(encoding="utf-8")
+
+        # Extract OS from Test Tags
+        os_name = extract_os_from_robot_content(robot_content)
+        if not os_name:
+            logger.info("Test Tags parsing failed, falling back to filename parsing", filename=robot_file_path.name)
+            os_name = extract_os_from_robot_filename(robot_file_path.name)
+
+        if not os_name:
+            logger.error("Could not extract OS from robot file", file=str(robot_file_path), title=title)
+            continue
+
+        # Transform path for catalog
+        catalog_dir = normalize_os_to_catalog_dir(os_name)
+        catalog_path = f"catalog/{catalog_dir}/{robot_file_path.name}"
+
+        logger.info(
+            "Transformed robot file path for catalog",
+            original_path=str(script_path),
+            catalog_path=catalog_path,
+            os_name=os_name,
+            catalog_dir=catalog_dir,
+        )
+
+        # Create branch name following conventional Git naming patterns
+        # feat/<os_name>/add-<script-name> (e.g., feat/ios-xe/add-verify-iosxe-error-disable-detection-reason-presence)
+        branch_name = f"feat/{os_name}/add-{robot_file_path.stem}".lower().replace("_", "-")
+
+        # Check if branch exists
+        if await github_adapter.branch_exists(branch_name):
+            logger.info("Branch already exists, skipping", branch=branch_name, title=title)
+            # TODO: Could update existing branch/PR here
+            continue
+
+        # Create branch
+        logger.info("Creating branch for catalog PR", branch=branch_name, base_branch=catalog_default_branch)
+        await github_adapter.create_branch(branch_name, catalog_default_branch)
+
+        # Commit file to branch
+        commit_message = f"feat: add {catalog_dir} test - {title}"
+        files_to_commit = [(catalog_path, robot_content)]
+
+        logger.info("Committing file to branch", branch=branch_name, file=catalog_path)
+        await github_adapter.commit_files_to_branch(branch_name, files_to_commit, commit_message)
+
+        # Create PR
+        pr_title = f"feat: add {catalog_dir} test - {title}"
+        pr_body = f"""Catalog contribution for test automation.
+
+**Test Case:** {title}
+**Operating System:** {os_name.upper()}
+**Script:** `{catalog_path}`
+
+This PR adds test automation generated by tac-quicksilver to the catalog for reuse across projects.
+
+🤖 Automatically generated catalog contribution"""
+
+        logger.info("Creating catalog PR", branch=branch_name, base_branch=catalog_default_branch, title=pr_title)
+        new_pr = await github_adapter.create_pull_request(
+            title=pr_title,
+            head=branch_name,
+            base=catalog_default_branch,
+            body=pr_body,
+        )
+
+        logger.info("Created catalog PR", pr_number=new_pr.number, pr_url=new_pr.html_url)
+
+        # Store PR data for tracking issue creation
+        created_pr_data.append(
+            {
+                "pr": new_pr,
+                "test_cases": [test_case],
+                "os_name": os_name,
+                "branch_name": branch_name,
+                "catalog_path": catalog_path,
+            }
+        )
+
+        # Write PR metadata back to test_cases.yaml
+        logger.info("Writing PR metadata back to test case file", source_file=str(source_file))
+
+        # Reload the source file
+        data = load_test_cases_yaml(source_file)
+        if data and "test_cases" in data:
+            # Find the test case and update it
+            test_case_found = False
+            for tc in data["test_cases"]:
+                if tc.get("generated_script_path") == script_path:
+                    update_test_case_with_pr_metadata(tc, new_pr, catalog_repo_url)
+                    test_case_found = True
+                    break
+
+            # Save back to file ONLY if we found and updated a test case
+            if test_case_found:
+                if save_test_cases_yaml(source_file, data):
+                    logger.info("Successfully wrote PR metadata back to test case file", source_file=str(source_file))
+                else:
+                    logger.error("Failed to save test case file", source_file=str(source_file))
+            else:
+                logger.warning(
+                    "Test case not found in source file, skipping save to prevent data loss",
+                    source_file=str(source_file),
+                    script_path=script_path,
+                )
+
+    logger.info(
+        "Completed catalog PR creation",
+        total_processed=len(catalog_test_cases),
+        prs_created=len(created_pr_data),
+    )
+
+    return created_pr_data
 
 
 async def sync_github_pull_requests(
@@ -273,10 +598,51 @@ async def sync_github_pull_requests(
     default_branch: str,
     base_directory: Path,
     testing_as_code_workflow: bool = False,
+    catalog_repo: str = "Testing-as-Code/tac-catalog",
+    catalog_repo_url: str | None = None,
+    test_cases_dir: Path | None = None,
+    github_auth_type: str | None = None,
+    github_pat_token: str | None = None,
+    github_app_id: int | None = None,
+    github_app_private_key_path: Path | None = None,
+    github_app_installation_id: int | None = None,
+    github_api_url: str = "https://api.github.com",
 ) -> None:
-    """Process pull requests for issues that specify a pull_request field."""
-    desired_issues_with_prs = [issue for issue in desired_issues if issue.pull_request is not None]
+    """Process pull requests for issues that specify a pull_request field.
+
+    Supports both project and catalog-destined PRs in the same run.
+    Issues with catalog_destined=true will have PRs created against the catalog repository.
+
+    Args:
+        desired_issues: List of desired issues from YAML
+        existing_issues: List of existing issues from GitHub (project repo)
+        existing_pull_requests: List of existing pull requests from GitHub
+        github_adapter: GitHub adapter for project repository
+        default_branch: Default branch name
+        base_directory: Base directory where files are located
+        testing_as_code_workflow: If True, augment PR bodies for Testing as Code
+        catalog_repo: Catalog repository name (owner/repo)
+        catalog_repo_url: Full URL to catalog repository for metadata writeback
+        test_cases_dir: Directory containing test_cases.yaml files for metadata writeback
+        github_auth_type: GitHub authentication type for creating catalog adapter
+        github_pat_token: GitHub PAT token for creating catalog adapter
+        github_app_id: GitHub App ID for creating catalog adapter
+        github_app_private_key_path: GitHub App private key path for creating catalog adapter
+        github_app_installation_id: GitHub App installation ID for creating catalog adapter
+        github_api_url: GitHub API URL for creating catalog adapter
+    """
+    # Filter out catalog-destined issues - they are handled separately by create_catalog_pull_requests()
+    desired_issues_with_prs = [issue for issue in desired_issues if issue.pull_request is not None and not getattr(issue, "catalog_destined", False)]
+
+    logger.info(
+        "Processing project issues with pull requests (catalog-destined filtered out)",
+        project_issues_count=len(desired_issues_with_prs),
+    )
+
+    # Process each issue (all are project issues since catalog-destined are filtered out)
     for desired_issue in desired_issues_with_prs:
+        logger.info("Processing project issue", issue_title=desired_issue.title)
+
         existing_issue = next((issue for issue in existing_issues if issue.title == desired_issue.title), None)
         if existing_issue is not None:
             logger.info(
@@ -300,4 +666,7 @@ async def sync_github_pull_requests(
             base_directory,
             existing_pull_request=existing_pr,
             testing_as_code_workflow=testing_as_code_workflow,
+            catalog_workflow=False,  # Always False for project issues
+            catalog_repo_url=None,
+            test_cases_dir=None,
         )

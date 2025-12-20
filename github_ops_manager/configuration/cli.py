@@ -216,8 +216,43 @@ def process_issues_cli(
     create_prs: Annotated[bool, Option(envvar="CREATE_PRS", help="Create PRs for issues.")] = False,
     debug: Annotated[bool, Option(envvar="DEBUG", help="Enable debug mode.")] = False,
     testing_as_code_workflow: Annotated[bool, Option(envvar="TESTING_AS_CODE_WORKFLOW", help="Enable Testing as Code workflow.")] = False,
+    catalog_repo: Annotated[
+        str,
+        Option(
+            envvar="CATALOG_REPO",
+            help="Catalog repository name (owner/repo) for catalog-destined test cases. Used when test cases have catalog_destined=true.",
+        ),
+    ] = "Testing-as-Code/tac-catalog",
+    test_cases_dir: Annotated[
+        Path,
+        Option(
+            envvar="TEST_CASES_DIR",
+            help="Directory containing test_cases.yaml files for catalog PR metadata writeback. Used when test cases have catalog_destined=true.",
+        ),
+    ] = Path("workspace/test_cases/"),
+    create_tracking_issues: Annotated[
+        bool,
+        Option(
+            envvar="CREATE_TRACKING_ISSUES",
+            help="Create tracking issues in project repo for catalog PRs and parameter learning tasks.",
+        ),
+    ] = False,
+    tracking_issue_labels: Annotated[
+        str | None,
+        Option(
+            envvar="TRACKING_ISSUE_LABELS",
+            help="Comma-separated list of labels to apply to tracking issues (e.g., 'parameter-learning,catalog-pr').",
+        ),
+    ] = None,
 ) -> None:
-    """Processes issues in a GitHub repository."""
+    """Processes issues in a GitHub repository.
+
+    Automatically detects catalog-destined test cases (catalog_destined=true) and creates
+    PRs against the catalog repository with proper directory structure and metadata writeback.
+    Non-catalog test cases are processed normally against the project repository.
+
+    Optionally creates tracking issues for catalog PRs to track parameter learning tasks.
+    """
     repo: str = ctx.obj["repo"]
     github_api_url: str = ctx.obj["github_api_url"]
     github_pat_token: str = ctx.obj["github_pat_token"]
@@ -228,6 +263,11 @@ def process_issues_cli(
 
     if testing_as_code_workflow is True:
         typer.echo("Testing as Code workflow is enabled - any Pull Requests created will have an augmented body")
+
+    # Parse tracking issue labels from comma-separated string
+    parsed_labels = None
+    if tracking_issue_labels:
+        parsed_labels = [label.strip() for label in tracking_issue_labels.split(",") if label.strip()]
 
     # Run the workflow
     result = asyncio.run(
@@ -241,6 +281,10 @@ def process_issues_cli(
             github_api_url=github_api_url,
             yaml_path=yaml_path,
             testing_as_code_workflow=testing_as_code_workflow,
+            catalog_repo=catalog_repo,
+            test_cases_dir=test_cases_dir,
+            create_tracking_issues=create_tracking_issues,
+            tracking_issue_labels=parsed_labels,
         )
     )
     if result.errors:
