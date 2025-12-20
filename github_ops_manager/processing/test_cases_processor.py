@@ -162,16 +162,11 @@ def find_test_cases_files(test_cases_dir: Path) -> list[Path]:
         return []
 
     # Look for .yaml and .yml files in immediate directory only (non-recursive)
+    # All YAML files in the test_cases directory are considered test case files
     yaml_files = list(test_cases_dir.glob("*.yaml")) + list(test_cases_dir.glob("*.yml"))
 
-    # Filter for files that likely contain test cases
-    test_case_files = []
-    for yaml_file in yaml_files:
-        if "test_case" in yaml_file.name.lower():
-            test_case_files.append(yaml_file)
-
-    logger.info("Found test case files", count=len(test_case_files), test_cases_dir=str(test_cases_dir))
-    return test_case_files
+    logger.info("Found test case files", count=len(yaml_files), test_cases_dir=str(test_cases_dir))
+    return yaml_files
 
 
 def load_test_cases_yaml(filepath: Path) -> dict[str, Any] | None:

@@ -264,21 +264,22 @@ class TestRequiresCatalogPrCreation:
 class TestFindTestCasesFiles:
     """Tests for find_test_cases_files function."""
 
-    def test_finds_test_case_yaml_files(self) -> None:
-        """Should find test_cases.yaml files in directory."""
+    def test_finds_all_yaml_files(self) -> None:
+        """Should find all YAML files in directory."""
         with tempfile.TemporaryDirectory() as tmpdir:
             tmppath = Path(tmpdir)
-            # Create test case files
+            # Create YAML files - all should be found
             (tmppath / "test_cases.yaml").write_text("test_cases: []")
             (tmppath / "other_test_cases.yaml").write_text("test_cases: []")
-            (tmppath / "regular.yaml").write_text("data: value")
+            (tmppath / "criteria_needs_review.yaml").write_text("test_cases: []")
 
             files = find_test_cases_files(tmppath)
 
-            assert len(files) == 2
+            assert len(files) == 3
             filenames = [f.name for f in files]
             assert "test_cases.yaml" in filenames
             assert "other_test_cases.yaml" in filenames
+            assert "criteria_needs_review.yaml" in filenames
 
     def test_returns_empty_for_nonexistent_dir(self) -> None:
         """Should return empty list for nonexistent directory."""
