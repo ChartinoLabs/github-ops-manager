@@ -4,8 +4,8 @@
 ║  ⚠️  DEPRECATION NOTICE - PENDING REMOVAL POST-MIGRATION  ⚠️                 ║
 ║                                                                              ║
 ║  This module provides backwards compatibility with the legacy issues.yaml    ║
-║  workflow. It migrates existing issue/PR metadata from issues.yaml to the    ║
-║  new test_cases.yaml format.                                                 ║
+║  workflow. It searches GitHub for existing issues/PRs matching titles in     ║
+║  issues.yaml and migrates the metadata to test_cases.yaml.                   ║
 ║                                                                              ║
 ║  This entire module should be REMOVED once all projects have been migrated   ║
 ║  away from using issues.yaml files.                                          ║
@@ -20,6 +20,7 @@ from typing import Any
 
 import structlog
 
+from github_ops_manager.github.adapter import GitHubKitAdapter
 from github_ops_manager.processing.test_cases_processor import (
     load_all_test_cases,
     save_test_case_metadata,
@@ -119,70 +120,72 @@ def find_matching_test_case(
     return None
 
 
-def extract_issue_metadata_from_issues_yaml(issue: dict[str, Any]) -> dict[str, Any] | None:
-    """Extract issue metadata from an issues.yaml entry.
+def find_github_issue_by_title(
+    title: str,
+    github_issues: list[Any],
+) -> Any | None:
+    """Find a GitHub issue matching the given title.
 
     ⚠️ DEPRECATED: Part of issues.yaml migration - remove post-migration.
 
     Args:
-        issue: Issue dictionary from issues.yaml
+        title: Title to search for
+        github_issues: List of GitHub Issue objects
 
     Returns:
-        Dictionary with issue_number and issue_url, or None if not available
+        Matching GitHub Issue or None
     """
-    issue_number = issue.get("number")
-    issue_url = issue.get("url")
-
-    if issue_number is not None:
-        return {
-            "issue_number": issue_number,
-            "issue_url": issue_url or "",
-        }
-
+    for gh_issue in github_issues:
+        if gh_issue.title == title:
+            return gh_issue
     return None
 
 
-def extract_pr_metadata_from_issues_yaml(issue: dict[str, Any]) -> dict[str, Any] | None:
-    """Extract PR metadata from an issues.yaml entry.
+def find_github_pr_by_title(
+    title: str,
+    github_prs: list[Any],
+) -> Any | None:
+    """Find a GitHub PR matching the given title.
 
     ⚠️ DEPRECATED: Part of issues.yaml migration - remove post-migration.
+
+    The legacy workflow creates PRs with title format: "GenAI, Review: {issue_title}"
 
     Args:
-        issue: Issue dictionary from issues.yaml
+        title: Issue title to search for (PR title will be derived)
+        github_prs: List of GitHub PullRequest objects
 
     Returns:
-        Dictionary with PR metadata, or None if not available
+        Matching GitHub PullRequest or None
     """
-    pr_data = issue.get("pull_request")
-    if not pr_data:
-        return None
+    # Legacy PR title format
+    expected_pr_title = f"GenAI, Review: {title}"
 
-    pr_number = pr_data.get("number")
-    if pr_number is None:
-        return None
-
-    return {
-        "pr_number": pr_number,
-        "pr_url": pr_data.get("url", ""),
-        "pr_branch": pr_data.get("branch", ""),
-    }
+    for gh_pr in github_prs:
+        if gh_pr.title == expected_pr_title:
+            return gh_pr
+    return None
 
 
-def migrate_issue_to_test_case(
+async def migrate_issue_from_github(
     issue: dict[str, Any],
     test_case: dict[str, Any],
+    github_issues: list[Any],
+    github_prs: list[Any],
     repo_url: str,
 ) -> bool:
-    """Migrate metadata from an issues.yaml issue to a test case.
+    """Migrate metadata from GitHub to a test case.
 
     ⚠️ DEPRECATED: Part of issues.yaml migration - remove post-migration.
 
-    This function reads metadata directly from the issues.yaml entry
-    and writes it to the corresponding test case.
+    This function searches GitHub for issues/PRs matching the title
+    and writes the metadata to the corresponding test case.
 
     Args:
         issue: Issue dictionary from issues.yaml
         test_case: Test case dictionary to update
+        github_issues: List of GitHub Issue objects
+        github_prs: List of GitHub PullRequest objects
         repo_url: Base URL of the repository
 
     Returns:
@@ -193,45 +196,45 @@ def migrate_issue_to_test_case(
         logger.warning("Issue has no title, skipping migration")
         return False
 
-    logger.info("Migrating issue to test case", title=title)
+    logger.info("Migrating issue from GitHub", title=title)
 
     metadata_updated = False
 
-    # Extract and apply issue metadata
-    issue_metadata = extract_issue_metadata_from_issues_yaml(issue)
-    if issue_metadata:
+    # Search for matching GitHub issue
+    gh_issue = find_github_issue_by_title(title, github_issues)
+    if gh_issue:
         update_test_case_with_issue_metadata(
             test_case,
-            issue_metadata["issue_number"],
-            issue_metadata["issue_url"],
+            gh_issue.number,
+            gh_issue.html_url,
         )
         metadata_updated = True
         logger.debug(
-            "Applied issue metadata",
+            "Applied issue metadata from GitHub",
             title=title,
-            issue_number=issue_metadata["issue_number"],
+            issue_number=gh_issue.number,
         )
 
-    # Extract and apply PR metadata
-    pr_metadata = extract_pr_metadata_from_issues_yaml(issue)
-    if pr_metadata:
+    # Search for matching GitHub PR
+    gh_pr = find_github_pr_by_title(title, github_prs)
+    if gh_pr:
         update_test_case_with_project_pr_metadata(
             test_case,
-            pr_metadata["pr_number"],
-            pr_metadata["pr_url"],
-            pr_metadata["pr_branch"],
+            gh_pr.number,
+            gh_pr.html_url,
+            gh_pr.head.ref,
             repo_url,
         )
         metadata_updated = True
         logger.debug(
-            "Applied PR metadata",
+            "Applied PR metadata from GitHub",
             title=title,
-            pr_number=pr_metadata["pr_number"],
+            pr_number=gh_pr.number,
         )
 
     if not metadata_updated:
         logger.warning(
-            "No issue or PR metadata found in issues.yaml entry",
+            "No matching issue or PR found in GitHub",
             title=title,
         )
         return False
@@ -245,10 +248,11 @@ def migrate_issue_to_test_case(
         return False
 
 
-def run_issues_yaml_migration(
+async def run_issues_yaml_migration(
     issues_yaml_path: Path,
     test_cases_dir: Path,
     repo_url: str,
+    github_adapter: GitHubKitAdapter,
 ) -> dict[str, Any]:
     """Run the migration from issues.yaml to test_cases.yaml.
 
@@ -260,17 +264,19 @@ def run_issues_yaml_migration(
     This function:
     1. Loads the issues.yaml file
     2. Loads all test cases from test_cases.yaml files
-    3. For each non-migrated issue in issues.yaml:
+    3. Fetches all issues and PRs from GitHub
+    4. For each non-migrated issue in issues.yaml:
        a. Finds the matching test case by title
-       b. Extracts issue/PR metadata from issues.yaml
-       c. Updates the test case with the metadata
+       b. Searches GitHub for matching issue/PR by title
+       c. Updates the test case with the metadata from GitHub
        d. Marks the issue as migrated in issues.yaml
-    4. Saves the updated issues.yaml file
+    5. Saves the updated issues.yaml file
 
     Args:
         issues_yaml_path: Path to the issues.yaml file
         test_cases_dir: Directory containing test_cases.yaml files
         repo_url: Base URL of the repository
+        github_adapter: GitHub adapter for API calls
 
     Returns:
         Dictionary with migration statistics:
@@ -278,7 +284,7 @@ def run_issues_yaml_migration(
         - already_migrated: Number of issues already marked as migrated
         - newly_migrated: Number of issues migrated in this run
         - skipped_no_match: Number of issues skipped (no matching test case)
-        - skipped_no_metadata: Number of issues skipped (no metadata to migrate)
+        - skipped_not_in_github: Number of issues skipped (not found in GitHub)
         - errors: List of error messages
     """
     results: dict[str, Any] = {
@@ -286,7 +292,7 @@ def run_issues_yaml_migration(
         "already_migrated": 0,
         "newly_migrated": 0,
         "skipped_no_match": 0,
-        "skipped_no_metadata": 0,
+        "skipped_not_in_github": 0,
         "errors": [],
     }
 
@@ -310,6 +316,21 @@ def run_issues_yaml_migration(
         results["errors"].append("No test cases found in test_cases_dir")
         return results
 
+    # Fetch all issues and PRs from GitHub
+    logger.info("Fetching issues and PRs from GitHub...")
+    try:
+        github_issues = await github_adapter.list_issues(state="all")
+        github_prs = await github_adapter.list_pull_requests(state="all")
+        logger.info(
+            "Fetched GitHub data",
+            issues_count=len(github_issues),
+            prs_count=len(github_prs),
+        )
+    except Exception as e:
+        logger.error("Failed to fetch data from GitHub", error=str(e))
+        results["errors"].append(f"Failed to fetch GitHub data: {str(e)}")
+        return results
+
     logger.info(
         "Starting issues.yaml migration",
         issues_count=len(issues),
@@ -327,15 +348,6 @@ def run_issues_yaml_migration(
             results["already_migrated"] += 1
             continue
 
-        # Check if there's any metadata to migrate
-        has_issue_metadata = extract_issue_metadata_from_issues_yaml(issue) is not None
-        has_pr_metadata = extract_pr_metadata_from_issues_yaml(issue) is not None
-
-        if not has_issue_metadata and not has_pr_metadata:
-            logger.debug("No metadata to migrate for issue", title=title)
-            results["skipped_no_metadata"] += 1
-            continue
-
         # Find matching test case
         matching_test_case = find_matching_test_case(title, test_cases)
         if matching_test_case is None:
@@ -343,11 +355,13 @@ def run_issues_yaml_migration(
             results["skipped_no_match"] += 1
             continue
 
-        # Migrate the issue metadata to the test case
+        # Migrate the issue metadata from GitHub to the test case
         try:
-            success = migrate_issue_to_test_case(
+            success = await migrate_issue_from_github(
                 issue,
                 matching_test_case,
+                github_issues,
+                github_prs,
                 repo_url,
             )
 
@@ -358,7 +372,7 @@ def run_issues_yaml_migration(
                 results["newly_migrated"] += 1
                 logger.info("Successfully migrated issue", title=title)
             else:
-                results["errors"].append(f"Failed to migrate issue: {title}")
+                results["skipped_not_in_github"] += 1
 
         except Exception as e:
             logger.error("Error migrating issue", title=title, error=str(e))
@@ -379,7 +393,7 @@ def run_issues_yaml_migration(
         already_migrated=results["already_migrated"],
         newly_migrated=results["newly_migrated"],
         skipped_no_match=results["skipped_no_match"],
-        skipped_no_metadata=results["skipped_no_metadata"],
+        skipped_not_in_github=results["skipped_not_in_github"],
         errors=len(results["errors"]),
     )
 

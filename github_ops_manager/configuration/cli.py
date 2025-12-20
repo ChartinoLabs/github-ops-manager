@@ -322,36 +322,6 @@ def process_test_requirements_cli(
     project_repo_url = f"{base_url}/{repo}"
     catalog_repo_url = f"{base_url}/{catalog_repo}"
 
-    # ═══════════════════════════════════════════════════════════════════════════
-    # ⚠️ DEPRECATED: issues.yaml migration - TODO: Remove this block post-migration
-    # ═══════════════════════════════════════════════════════════════════════════
-    if issues_yaml is not None:
-        from github_ops_manager.synchronize.issues_yaml_migration import run_issues_yaml_migration
-
-        typer.echo("\n--- Running issues.yaml Migration (DEPRECATED) ---")
-        typer.echo(f"Migrating from: {issues_yaml.absolute()}")
-
-        migration_results = run_issues_yaml_migration(
-            issues_yaml_path=issues_yaml,
-            test_cases_dir=test_cases_dir,
-            repo_url=project_repo_url,
-        )
-
-        typer.echo("Migration complete:")
-        typer.echo(f"  Total issues in issues.yaml: {migration_results['total_issues']}")
-        typer.echo(f"  Already migrated: {migration_results['already_migrated']}")
-        typer.echo(f"  Newly migrated: {migration_results['newly_migrated']}")
-        typer.echo(f"  Skipped (no match): {migration_results['skipped_no_match']}")
-        typer.echo(f"  Skipped (no metadata): {migration_results['skipped_no_metadata']}")
-
-        if migration_results["errors"]:
-            typer.echo(f"\nMigration warnings ({len(migration_results['errors'])}):", err=True)
-            for error in migration_results["errors"]:
-                typer.echo(f"  - {error}", err=True)
-
-        typer.echo("")  # Blank line before main processing
-    # ═══════════════════════════════════════════════════════════════════════════
-
     async def run_processing() -> dict:
         # Create project adapter
         project_adapter = await GitHubKitAdapter.create(
@@ -369,6 +339,37 @@ def process_test_requirements_cli(
         project_default_branch = project_repo_info.default_branch
 
         typer.echo(f"Project repository: {repo} (default branch: {project_default_branch})")
+
+        # ═══════════════════════════════════════════════════════════════════════════
+        # ⚠️ DEPRECATED: issues.yaml migration - TODO: Remove this block post-migration
+        # ═══════════════════════════════════════════════════════════════════════════
+        if issues_yaml is not None:
+            from github_ops_manager.synchronize.issues_yaml_migration import run_issues_yaml_migration
+
+            typer.echo("\n--- Running issues.yaml Migration (DEPRECATED) ---")
+            typer.echo(f"Migrating from: {issues_yaml.absolute()}")
+
+            migration_results = await run_issues_yaml_migration(
+                issues_yaml_path=issues_yaml,
+                test_cases_dir=test_cases_dir,
+                repo_url=project_repo_url,
+                github_adapter=project_adapter,
+            )
+
+            typer.echo("Migration complete:")
+            typer.echo(f"  Total issues in issues.yaml: {migration_results['total_issues']}")
+            typer.echo(f"  Already migrated: {migration_results['already_migrated']}")
+            typer.echo(f"  Newly migrated: {migration_results['newly_migrated']}")
+            typer.echo(f"  Skipped (no match): {migration_results['skipped_no_match']}")
+            typer.echo(f"  Skipped (not in GitHub): {migration_results['skipped_not_in_github']}")
+
+            if migration_results["errors"]:
+                typer.echo(f"\nMigration warnings ({len(migration_results['errors'])}):", err=True)
+                for error in migration_results["errors"]:
+                    typer.echo(f"  - {error}", err=True)
+
+            typer.echo("")  # Blank line before main processing
+        # ═══════════════════════════════════════════════════════════════════════════
 
         # Create catalog adapter
         catalog_adapter = await GitHubKitAdapter.create(
