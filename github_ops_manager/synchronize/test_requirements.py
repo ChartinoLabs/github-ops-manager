@@ -140,7 +140,7 @@ async def create_project_pr_for_test_case(
         await github_adapter.commit_files_to_branch(branch_name, files_to_commit, commit_message)
 
         # Create PR
-        pr_title = f"Test Automation: {title}"
+        pr_title = f"GenAI, Review: {title}"
 
         # Build PR body with issue reference if available
         issue_number = test_case.get("project_issue_number")
