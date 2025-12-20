@@ -178,6 +178,78 @@ class TestCreateProjectPrForTestCase:
             mock_adapter.create_pull_request.assert_called_once()
 
     @pytest.mark.asyncio
+    async def test_pr_body_includes_issue_reference(self) -> None:
+        """Should include issue reference in PR body when issue metadata exists."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            base_dir = Path(tmpdir)
+            script_path = "test.robot"
+            (base_dir / script_path).write_text("*** Test Cases ***\nTest\n    Log    Hello")
+
+            mock_adapter = AsyncMock()
+            mock_adapter.branch_exists.return_value = False
+            mock_pr = MagicMock()
+            mock_pr.number = 100
+            mock_pr.html_url = "https://github.com/org/repo/pull/100"
+            mock_adapter.create_pull_request.return_value = mock_pr
+
+            test_case: dict[str, Any] = {
+                "title": "Test Case 1",
+                "generated_script_path": script_path,
+                "project_issue_number": 42,
+                "project_issue_url": "https://github.com/org/repo/issues/42",
+            }
+
+            await create_project_pr_for_test_case(
+                test_case,
+                mock_adapter,
+                base_dir,
+                "main",
+                "https://github.com/org/repo",
+            )
+
+            # Verify PR body includes issue reference
+            call_kwargs = mock_adapter.create_pull_request.call_args[1]
+            pr_body = call_kwargs["body"]
+            assert "Closes #42" in pr_body
+            assert "#42" in pr_body
+            assert "https://github.com/org/repo/issues/42" in pr_body
+
+    @pytest.mark.asyncio
+    async def test_pr_body_without_issue_reference(self) -> None:
+        """Should create PR without issue reference when no issue metadata."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            base_dir = Path(tmpdir)
+            script_path = "test.robot"
+            (base_dir / script_path).write_text("*** Test Cases ***\nTest\n    Log    Hello")
+
+            mock_adapter = AsyncMock()
+            mock_adapter.branch_exists.return_value = False
+            mock_pr = MagicMock()
+            mock_pr.number = 100
+            mock_pr.html_url = "https://github.com/org/repo/pull/100"
+            mock_adapter.create_pull_request.return_value = mock_pr
+
+            test_case: dict[str, Any] = {
+                "title": "Test Case 1",
+                "generated_script_path": script_path,
+                # No project_issue_number
+            }
+
+            await create_project_pr_for_test_case(
+                test_case,
+                mock_adapter,
+                base_dir,
+                "main",
+                "https://github.com/org/repo",
+            )
+
+            # Verify PR body does not have closing keyword
+            call_kwargs = mock_adapter.create_pull_request.call_args[1]
+            pr_body = call_kwargs["body"]
+            assert "Closes #" not in pr_body
+            assert "Quicksilver" in pr_body
+
+    @pytest.mark.asyncio
     async def test_skips_when_branch_exists(self) -> None:
         """Should skip PR creation if branch already exists."""
         with tempfile.TemporaryDirectory() as tmpdir:
