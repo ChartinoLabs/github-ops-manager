@@ -18,6 +18,8 @@ logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)
 yaml = YAML()
 yaml.preserve_quotes = True
 yaml.default_flow_style = False
+yaml.width = 4096  # Prevent line wrapping
+yaml.indent(mapping=2, sequence=4, offset=2)  # Match original file formatting (- indented 2 from parent)
 
 
 # Mapping from tac-quicksilver normalized OS to catalog directory names
