@@ -18,6 +18,8 @@ logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)
 yaml = YAML()
 yaml.preserve_quotes = True
 yaml.default_flow_style = False
+yaml.width = 4096  # Prevent line wrapping
+yaml.indent(mapping=2, sequence=4, offset=2)  # Match original file formatting (- indented 2 from parent)
 
 
 # Mapping from tac-quicksilver normalized OS to catalog directory names
@@ -160,16 +162,11 @@ def find_test_cases_files(test_cases_dir: Path) -> list[Path]:
         return []
 
     # Look for .yaml and .yml files in immediate directory only (non-recursive)
+    # All YAML files in the test_cases directory are considered test case files
     yaml_files = list(test_cases_dir.glob("*.yaml")) + list(test_cases_dir.glob("*.yml"))
 
-    # Filter for files that likely contain test cases
-    test_case_files = []
-    for yaml_file in yaml_files:
-        if "test_case" in yaml_file.name.lower():
-            test_case_files.append(yaml_file)
-
-    logger.info("Found test case files", count=len(test_case_files), test_cases_dir=str(test_cases_dir))
-    return test_case_files
+    logger.info("Found test case files", count=len(yaml_files), test_cases_dir=str(test_cases_dir))
+    return yaml_files
 
 
 def load_test_cases_yaml(filepath: Path) -> dict[str, Any] | None:
@@ -305,6 +302,101 @@ def update_test_case_with_issue_metadata(test_case: dict[str, Any], issue_number
     return test_case
 
 
+def update_test_case_with_project_pr_metadata(
+    test_case: dict[str, Any],
+    pr_number: int,
+    pr_url: str,
+    pr_branch: str,
+    repo_url: str,
+) -> dict[str, Any]:
+    """Add project PR metadata fields to test case.
+
+    Args:
+        test_case: Test case dictionary to update
+        pr_number: GitHub Pull Request number
+        pr_url: GitHub Pull Request URL
+        pr_branch: Branch name for the PR
+        repo_url: Full URL to the project repository
+
+    Returns:
+        Updated test case dictionary
+    """
+    test_case["project_pr_git_url"] = repo_url
+    test_case["project_pr_number"] = pr_number
+    test_case["project_pr_url"] = pr_url
+    test_case["project_pr_branch"] = pr_branch
+
+    logger.info(
+        "Updated test case with project PR metadata",
+        project_pr_number=pr_number,
+        project_pr_url=pr_url,
+        project_pr_branch=pr_branch,
+    )
+
+    return test_case
+
+
+def requires_issue_creation(test_case: dict[str, Any]) -> bool:
+    """Check if a test case needs an issue to be created.
+
+    An issue is needed if the test case doesn't already have issue metadata.
+
+    Args:
+        test_case: Test case dictionary to check
+
+    Returns:
+        True if issue needs to be created, False otherwise
+    """
+    has_issue_number = test_case.get("project_issue_number") is not None
+    has_issue_url = test_case.get("project_issue_url") is not None
+
+    return not (has_issue_number and has_issue_url)
+
+
+def requires_project_pr_creation(test_case: dict[str, Any]) -> bool:
+    """Check if a test case needs a project PR to be created.
+
+    A project PR is needed if:
+    - The test case has a generated_script_path (script exists)
+    - The test case is NOT catalog-destined
+    - The test case doesn't already have project PR metadata
+
+    Args:
+        test_case: Test case dictionary to check
+
+    Returns:
+        True if project PR needs to be created, False otherwise
+    """
+    has_script = test_case.get("generated_script_path") is not None
+    is_catalog = test_case.get("catalog_destined", False)
+    has_pr_number = test_case.get("project_pr_number") is not None
+    has_pr_url = test_case.get("project_pr_url") is not None
+
+    return has_script and not is_catalog and not (has_pr_number and has_pr_url)
+
+
+def requires_catalog_pr_creation(test_case: dict[str, Any]) -> bool:
+    """Check if a test case needs a catalog PR to be created.
+
+    A catalog PR is needed if:
+    - The test case has a generated_script_path (script exists)
+    - The test case IS catalog-destined
+    - The test case doesn't already have catalog PR metadata
+
+    Args:
+        test_case: Test case dictionary to check
+
+    Returns:
+        True if catalog PR needs to be created, False otherwise
+    """
+    has_script = test_case.get("generated_script_path") is not None
+    is_catalog = test_case.get("catalog_destined", False)
+    has_pr_number = test_case.get("catalog_pr_number") is not None
+    has_pr_url = test_case.get("catalog_pr_url") is not None
+
+    return has_script and is_catalog and not (has_pr_number and has_pr_url)
+
+
 def load_catalog_destined_test_cases(test_cases_dir: Path) -> list[dict[str, Any]]:
     """Load test cases that are catalog-destined from test_cases.yaml files.
 
@@ -345,3 +437,97 @@ def load_catalog_destined_test_cases(test_cases_dir: Path) -> list[dict[str, Any
 
     logger.info("Loaded catalog-destined test cases", count=len(catalog_test_cases), test_cases_dir=str(test_cases_dir))
     return catalog_test_cases
+
+
+def load_all_test_cases(test_cases_dir: Path) -> list[dict[str, Any]]:
+    """Load all test cases from test_cases.yaml files.
+
+    Each test case is annotated with _source_file metadata for writeback.
+
+    Args:
+        test_cases_dir: Directory containing test_cases.yaml files
+
+    Returns:
+        List of all test case dictionaries
+    """
+    all_test_cases = []
+    test_case_files = find_test_cases_files(test_cases_dir)
+
+    for test_case_file in test_case_files:
+        data = load_test_cases_yaml(test_case_file)
+        if not data or "test_cases" not in data:
+            continue
+
+        test_cases = data["test_cases"]
+        if not isinstance(test_cases, list):
+            logger.warning("test_cases field is not a list", filepath=str(test_case_file))
+            continue
+
+        for test_case in test_cases:
+            # Add metadata about source file for later writeback
+            test_case["_source_file"] = str(test_case_file)
+            all_test_cases.append(test_case)
+            logger.debug(
+                "Loaded test case",
+                title=test_case.get("title"),
+                catalog_destined=test_case.get("catalog_destined", False),
+                has_script=test_case.get("generated_script_path") is not None,
+                source_file=str(test_case_file),
+            )
+
+    logger.info("Loaded all test cases", count=len(all_test_cases), test_cases_dir=str(test_cases_dir))
+    return all_test_cases
+
+
+def save_test_case_metadata(test_case: dict[str, Any]) -> bool:
+    """Save updated test case metadata back to its source file.
+
+    Uses the _source_file metadata to find and update the correct file.
+
+    Args:
+        test_case: Test case dictionary with updated metadata and _source_file
+
+    Returns:
+        True if save succeeded, False otherwise
+    """
+    source_file = test_case.get("_source_file")
+    if not source_file:
+        logger.error("Test case missing _source_file metadata, cannot save")
+        return False
+
+    source_path = Path(source_file)
+    title = test_case.get("title")
+
+    # Load the source file
+    data = load_test_cases_yaml(source_path)
+    if not data or "test_cases" not in data:
+        logger.error("Failed to load source file for metadata save", source_file=source_file)
+        return False
+
+    # Find and update the matching test case
+    test_cases = data["test_cases"]
+    if not isinstance(test_cases, list):
+        logger.error("test_cases field is not a list", source_file=source_file)
+        return False
+
+    found = False
+    for tc in test_cases:
+        if tc.get("title") == title:
+            # Update all metadata fields (excluding internal _source_file)
+            for key, value in test_case.items():
+                if not key.startswith("_"):
+                    tc[key] = value
+            found = True
+            break
+
+    if not found:
+        logger.error("Test case not found in source file", title=title, source_file=source_file)
+        return False
+
+    # Save back to file
+    if save_test_cases_yaml(source_path, data):
+        logger.info("Saved test case metadata", title=title, source_file=source_file)
+        return True
+    else:
+        logger.error("Failed to save test case metadata", title=title, source_file=source_file)
+        return False
