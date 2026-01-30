@@ -7,6 +7,7 @@ from .constants import (
     PR_REFERENCE_PATTERN,
     VERSION_HEADER_PATTERN,
 )
+from .retry import retry_on_rate_limit
 
 __all__ = [
     "PR_REFERENCE_PATTERN",
@@ -14,4 +15,5 @@ __all__ = [
     "VERSION_HEADER_PATTERN",
     "DEFAULT_RELEASE_NOTES_PATH",
     "DEFAULT_RELEASE_NOTES_HEADER",
+    "retry_on_rate_limit",
 ]
