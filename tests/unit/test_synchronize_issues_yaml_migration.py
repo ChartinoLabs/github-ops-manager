@@ -209,7 +209,7 @@ class TestMigrateIssueFromGithub:
 
     @pytest.mark.asyncio
     async def test_migrates_issue_metadata(self) -> None:
-        """Should migrate issue metadata from GitHub to test case."""
+        """Should migrate issue metadata from GitHub to test case in nested structure."""
         with tempfile.TemporaryDirectory() as tmpdir:
             tmppath = Path(tmpdir)
             test_case_file = tmppath / "my_test_cases.yaml"
@@ -235,12 +235,12 @@ class TestMigrateIssueFromGithub:
             )
 
             assert result is True
-            assert test_case["project_issue_number"] == 123
-            assert test_case["project_issue_url"] == "https://github.com/org/repo/issues/123"
+            assert test_case["metadata"]["project_tracking"]["issue_number"] == 123
+            assert test_case["metadata"]["project_tracking"]["issue_url"] == "https://github.com/org/repo/issues/123"
 
     @pytest.mark.asyncio
     async def test_migrates_pr_metadata(self) -> None:
-        """Should migrate PR metadata from GitHub to test case."""
+        """Should migrate PR metadata from GitHub to test case in nested structure."""
         with tempfile.TemporaryDirectory() as tmpdir:
             tmppath = Path(tmpdir)
             test_case_file = tmppath / "my_test_cases.yaml"
@@ -267,9 +267,9 @@ class TestMigrateIssueFromGithub:
             )
 
             assert result is True
-            assert test_case["project_pr_number"] == 456
-            assert test_case["project_pr_url"] == "https://github.com/org/repo/pull/456"
-            assert test_case["project_pr_branch"] == "feature/test"
+            assert test_case["metadata"]["project_tracking"]["pr_number"] == 456
+            assert test_case["metadata"]["project_tracking"]["pr_url"] == "https://github.com/org/repo/pull/456"
+            assert test_case["metadata"]["project_tracking"]["pr_branch"] == "feature/test"
 
     @pytest.mark.asyncio
     async def test_returns_false_when_not_found_in_github(self) -> None:

@@ -14,6 +14,7 @@ from ruamel.yaml import YAML
 
 logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)
 
+
 # Initialize YAML handler with format preservation
 yaml = YAML()
 yaml.preserve_quotes = True
@@ -254,7 +255,10 @@ def find_test_case_by_filename(test_cases: list[dict[str, Any]], generated_scrip
 
 
 def update_test_case_with_pr_metadata(test_case: dict[str, Any], pr: PullRequest, catalog_repo_url: str) -> dict[str, Any]:
-    """Add PR metadata fields to test case.
+    """Add catalog PR metadata fields to test case.
+
+    Writes metadata to the nested structure:
+        metadata.catalog_tracking.{pr_number, pr_url, pr_branch, git_url}
 
     Args:
         test_case: Test case dictionary to update
@@ -264,13 +268,14 @@ def update_test_case_with_pr_metadata(test_case: dict[str, Any], pr: PullRequest
     Returns:
         Updated test case dictionary
     """
-    test_case["catalog_pr_git_url"] = catalog_repo_url
-    test_case["catalog_pr_number"] = pr.number
-    test_case["catalog_pr_url"] = pr.html_url
-    test_case["catalog_pr_branch"] = pr.head.ref
+    catalog_tracking = test_case.setdefault("metadata", {}).setdefault("catalog_tracking", {})
+    catalog_tracking["git_url"] = catalog_repo_url
+    catalog_tracking["pr_number"] = pr.number
+    catalog_tracking["pr_url"] = pr.html_url
+    catalog_tracking["pr_branch"] = pr.head.ref
 
     logger.info(
-        "Updated test case with PR metadata",
+        "Updated test case with catalog PR metadata",
         catalog_pr_number=pr.number,
         catalog_pr_url=pr.html_url,
         catalog_pr_branch=pr.head.ref,
@@ -282,6 +287,9 @@ def update_test_case_with_pr_metadata(test_case: dict[str, Any], pr: PullRequest
 def update_test_case_with_issue_metadata(test_case: dict[str, Any], issue_number: int, issue_url: str) -> dict[str, Any]:
     """Add project issue metadata fields to test case.
 
+    Writes metadata to the nested structure:
+        metadata.project_tracking.{issue_number, issue_url}
+
     Args:
         test_case: Test case dictionary to update
         issue_number: GitHub Issue number
@@ -290,8 +298,9 @@ def update_test_case_with_issue_metadata(test_case: dict[str, Any], issue_number
     Returns:
         Updated test case dictionary
     """
-    test_case["project_issue_number"] = issue_number
-    test_case["project_issue_url"] = issue_url
+    project_tracking = test_case.setdefault("metadata", {}).setdefault("project_tracking", {})
+    project_tracking["issue_number"] = issue_number
+    project_tracking["issue_url"] = issue_url
 
     logger.info(
         "Updated test case with project issue metadata",
@@ -311,6 +320,9 @@ def update_test_case_with_project_pr_metadata(
 ) -> dict[str, Any]:
     """Add project PR metadata fields to test case.
 
+    Writes metadata to the nested structure:
+        metadata.project_tracking.{pr_number, pr_url, pr_branch, git_url}
+
     Args:
         test_case: Test case dictionary to update
         pr_number: GitHub Pull Request number
@@ -321,10 +333,11 @@ def update_test_case_with_project_pr_metadata(
     Returns:
         Updated test case dictionary
     """
-    test_case["project_pr_git_url"] = repo_url
-    test_case["project_pr_number"] = pr_number
-    test_case["project_pr_url"] = pr_url
-    test_case["project_pr_branch"] = pr_branch
+    project_tracking = test_case.setdefault("metadata", {}).setdefault("project_tracking", {})
+    project_tracking["git_url"] = repo_url
+    project_tracking["pr_number"] = pr_number
+    project_tracking["pr_url"] = pr_url
+    project_tracking["pr_branch"] = pr_branch
 
     logger.info(
         "Updated test case with project PR metadata",
@@ -340,6 +353,7 @@ def requires_issue_creation(test_case: dict[str, Any]) -> bool:
     """Check if a test case needs an issue to be created.
 
     An issue is needed if the test case doesn't already have issue metadata.
+    Checks nested structure: metadata.project_tracking.{issue_number, issue_url}
 
     Args:
         test_case: Test case dictionary to check
@@ -347,8 +361,9 @@ def requires_issue_creation(test_case: dict[str, Any]) -> bool:
     Returns:
         True if issue needs to be created, False otherwise
     """
-    has_issue_number = test_case.get("project_issue_number") is not None
-    has_issue_url = test_case.get("project_issue_url") is not None
+    project_tracking = test_case.get("metadata", {}).get("project_tracking", {})
+    has_issue_number = project_tracking.get("issue_number") is not None
+    has_issue_url = project_tracking.get("issue_url") is not None
 
     return not (has_issue_number and has_issue_url)
 
@@ -358,8 +373,9 @@ def requires_project_pr_creation(test_case: dict[str, Any]) -> bool:
 
     A project PR is needed if:
     - The test case has a generated_script_path (script exists)
-    - The test case is NOT catalog-destined
+    - The test case is NOT catalog-destined (metadata.catalog.destined)
     - The test case doesn't already have project PR metadata
+      (metadata.project_tracking.{pr_number, pr_url})
 
     Args:
         test_case: Test case dictionary to check
@@ -367,10 +383,12 @@ def requires_project_pr_creation(test_case: dict[str, Any]) -> bool:
     Returns:
         True if project PR needs to be created, False otherwise
     """
+    metadata = test_case.get("metadata", {})
     has_script = test_case.get("generated_script_path") is not None
-    is_catalog = test_case.get("catalog_destined", False)
-    has_pr_number = test_case.get("project_pr_number") is not None
-    has_pr_url = test_case.get("project_pr_url") is not None
+    is_catalog = metadata.get("catalog", {}).get("destined", False)
+    project_tracking = metadata.get("project_tracking", {})
+    has_pr_number = project_tracking.get("pr_number") is not None
+    has_pr_url = project_tracking.get("pr_url") is not None
 
     return has_script and not is_catalog and not (has_pr_number and has_pr_url)
 
@@ -380,8 +398,9 @@ def requires_catalog_pr_creation(test_case: dict[str, Any]) -> bool:
 
     A catalog PR is needed if:
     - The test case has a generated_script_path (script exists)
-    - The test case IS catalog-destined
+    - The test case IS catalog-destined (metadata.catalog.destined)
     - The test case doesn't already have catalog PR metadata
+      (metadata.catalog_tracking.{pr_number, pr_url})
 
     Args:
         test_case: Test case dictionary to check
@@ -389,10 +408,12 @@ def requires_catalog_pr_creation(test_case: dict[str, Any]) -> bool:
     Returns:
         True if catalog PR needs to be created, False otherwise
     """
+    metadata = test_case.get("metadata", {})
     has_script = test_case.get("generated_script_path") is not None
-    is_catalog = test_case.get("catalog_destined", False)
-    has_pr_number = test_case.get("catalog_pr_number") is not None
-    has_pr_url = test_case.get("catalog_pr_url") is not None
+    is_catalog = metadata.get("catalog", {}).get("destined", False)
+    catalog_tracking = metadata.get("catalog_tracking", {})
+    has_pr_number = catalog_tracking.get("pr_number") is not None
+    has_pr_url = catalog_tracking.get("pr_url") is not None
 
     return has_script and is_catalog and not (has_pr_number and has_pr_url)
 
@@ -400,11 +421,13 @@ def requires_catalog_pr_creation(test_case: dict[str, Any]) -> bool:
 def load_catalog_destined_test_cases(test_cases_dir: Path) -> list[dict[str, Any]]:
     """Load test cases that are catalog-destined from test_cases.yaml files.
 
+    Checks nested structure: metadata.catalog.destined
+
     Args:
         test_cases_dir: Directory containing test_cases.yaml files
 
     Returns:
-        List of test case dictionaries with catalog_destined=true
+        List of test case dictionaries with metadata.catalog.destined=true
     """
     catalog_test_cases = []
     test_case_files = find_test_cases_files(test_cases_dir)
@@ -421,7 +444,7 @@ def load_catalog_destined_test_cases(test_cases_dir: Path) -> list[dict[str, Any
 
         # Filter for catalog-destined test cases with generated scripts
         for test_case in test_cases:
-            is_catalog = test_case.get("catalog_destined", False)
+            is_catalog = test_case.get("metadata", {}).get("catalog", {}).get("destined", False)
             has_script = test_case.get("generated_script_path")
 
             if is_catalog and has_script:
@@ -470,7 +493,7 @@ def load_all_test_cases(test_cases_dir: Path) -> list[dict[str, Any]]:
             logger.debug(
                 "Loaded test case",
                 title=test_case.get("title"),
-                catalog_destined=test_case.get("catalog_destined", False),
+                catalog_destined=test_case.get("metadata", {}).get("catalog", {}).get("destined", False),
                 has_script=test_case.get("generated_script_path") is not None,
                 source_file=str(test_case_file),
             )

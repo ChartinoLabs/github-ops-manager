@@ -266,10 +266,14 @@ def process_test_requirements_cli(
     - Writing metadata back to test_cases.yaml files
 
     For each test case:
-    - If project_issue_number is missing, creates an issue
+    - If metadata.project_tracking.issue_number is missing, creates an issue
     - If generated_script_path exists and PR metadata is missing:
-      - Non-catalog: creates PR in project repo
-      - Catalog-destined: creates PR in catalog repo
+      - Non-catalog (metadata.catalog.destined != true): creates PR in project repo
+      - Catalog-destined (metadata.catalog.destined == true): creates PR in catalog repo
+
+    Metadata structure written:
+    - metadata.project_tracking.{issue_number, issue_url, pr_number, pr_url, pr_branch, git_url}
+    - metadata.catalog_tracking.{pr_number, pr_url, pr_branch, git_url}
 
     MIGRATION: If --issues-yaml is provided, existing metadata from issues.yaml
     will be migrated to test_cases.yaml before normal processing begins.

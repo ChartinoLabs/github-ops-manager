@@ -62,24 +62,28 @@ class TestUpdateTestCaseWithIssueMetadata:
     """Tests for update_test_case_with_issue_metadata function."""
 
     def test_adds_issue_metadata(self) -> None:
-        """Should add issue number and URL to test case."""
+        """Should add issue number and URL to test case in nested structure."""
         test_case: dict[str, Any] = {"title": "Test Case 1"}
         result = update_test_case_with_issue_metadata(test_case, 123, "https://github.com/org/repo/issues/123")
 
-        assert result["project_issue_number"] == 123
-        assert result["project_issue_url"] == "https://github.com/org/repo/issues/123"
+        assert result["metadata"]["project_tracking"]["issue_number"] == 123
+        assert result["metadata"]["project_tracking"]["issue_url"] == "https://github.com/org/repo/issues/123"
 
     def test_overwrites_existing_metadata(self) -> None:
         """Should overwrite existing issue metadata."""
         test_case: dict[str, Any] = {
             "title": "Test Case 1",
-            "project_issue_number": 100,
-            "project_issue_url": "https://old-url",
+            "metadata": {
+                "project_tracking": {
+                    "issue_number": 100,
+                    "issue_url": "https://old-url",
+                }
+            },
         }
         result = update_test_case_with_issue_metadata(test_case, 200, "https://new-url")
 
-        assert result["project_issue_number"] == 200
-        assert result["project_issue_url"] == "https://new-url"
+        assert result["metadata"]["project_tracking"]["issue_number"] == 200
+        assert result["metadata"]["project_tracking"]["issue_url"] == "https://new-url"
 
     def test_returns_same_dict(self) -> None:
         """Should return the same dictionary object (mutated in place)."""
@@ -93,7 +97,7 @@ class TestUpdateTestCaseWithProjectPrMetadata:
     """Tests for update_test_case_with_project_pr_metadata function."""
 
     def test_adds_project_pr_metadata(self) -> None:
-        """Should add all project PR metadata fields."""
+        """Should add all project PR metadata fields in nested structure."""
         test_case: dict[str, Any] = {"title": "Test Case 1"}
         result = update_test_case_with_project_pr_metadata(
             test_case,
@@ -103,17 +107,21 @@ class TestUpdateTestCaseWithProjectPrMetadata:
             repo_url="https://github.com/org/repo",
         )
 
-        assert result["project_pr_number"] == 456
-        assert result["project_pr_url"] == "https://github.com/org/repo/pull/456"
-        assert result["project_pr_branch"] == "feature/test-case-1"
-        assert result["project_pr_git_url"] == "https://github.com/org/repo"
+        assert result["metadata"]["project_tracking"]["pr_number"] == 456
+        assert result["metadata"]["project_tracking"]["pr_url"] == "https://github.com/org/repo/pull/456"
+        assert result["metadata"]["project_tracking"]["pr_branch"] == "feature/test-case-1"
+        assert result["metadata"]["project_tracking"]["git_url"] == "https://github.com/org/repo"
 
     def test_overwrites_existing_metadata(self) -> None:
         """Should overwrite existing project PR metadata."""
         test_case: dict[str, Any] = {
             "title": "Test Case 1",
-            "project_pr_number": 100,
-            "project_pr_url": "https://old-url",
+            "metadata": {
+                "project_tracking": {
+                    "pr_number": 100,
+                    "pr_url": "https://old-url",
+                }
+            },
         }
         result = update_test_case_with_project_pr_metadata(
             test_case,
@@ -123,15 +131,15 @@ class TestUpdateTestCaseWithProjectPrMetadata:
             repo_url="https://repo",
         )
 
-        assert result["project_pr_number"] == 200
-        assert result["project_pr_url"] == "https://new-url"
+        assert result["metadata"]["project_tracking"]["pr_number"] == 200
+        assert result["metadata"]["project_tracking"]["pr_url"] == "https://new-url"
 
 
 class TestUpdateTestCaseWithPrMetadata:
     """Tests for update_test_case_with_pr_metadata function (catalog PRs)."""
 
     def test_adds_catalog_pr_metadata(self) -> None:
-        """Should add all catalog PR metadata fields."""
+        """Should add all catalog PR metadata fields in nested structure."""
         # Create a mock PR object
         mock_pr = MagicMock()
         mock_pr.number = 789
@@ -141,10 +149,10 @@ class TestUpdateTestCaseWithPrMetadata:
         test_case: dict[str, Any] = {"title": "Test Case 1"}
         result = update_test_case_with_pr_metadata(test_case, mock_pr, "https://github.com/catalog/repo")
 
-        assert result["catalog_pr_number"] == 789
-        assert result["catalog_pr_url"] == "https://github.com/catalog/repo/pull/789"
-        assert result["catalog_pr_branch"] == "feat/nxos/add-test"
-        assert result["catalog_pr_git_url"] == "https://github.com/catalog/repo"
+        assert result["metadata"]["catalog_tracking"]["pr_number"] == 789
+        assert result["metadata"]["catalog_tracking"]["pr_url"] == "https://github.com/catalog/repo/pull/789"
+        assert result["metadata"]["catalog_tracking"]["pr_branch"] == "feat/nxos/add-test"
+        assert result["metadata"]["catalog_tracking"]["git_url"] == "https://github.com/catalog/repo"
 
 
 class TestRequiresIssueCreation:
@@ -157,20 +165,30 @@ class TestRequiresIssueCreation:
 
     def test_needs_issue_when_only_number(self) -> None:
         """Should return True when only issue number exists."""
-        test_case: dict[str, Any] = {"title": "Test Case 1", "project_issue_number": 123}
+        test_case: dict[str, Any] = {
+            "title": "Test Case 1",
+            "metadata": {"project_tracking": {"issue_number": 123}},
+        }
         assert requires_issue_creation(test_case) is True
 
     def test_needs_issue_when_only_url(self) -> None:
         """Should return True when only issue URL exists."""
-        test_case: dict[str, Any] = {"title": "Test Case 1", "project_issue_url": "https://url"}
+        test_case: dict[str, Any] = {
+            "title": "Test Case 1",
+            "metadata": {"project_tracking": {"issue_url": "https://url"}},
+        }
         assert requires_issue_creation(test_case) is True
 
     def test_no_issue_needed_when_both_exist(self) -> None:
         """Should return False when both issue number and URL exist."""
         test_case: dict[str, Any] = {
             "title": "Test Case 1",
-            "project_issue_number": 123,
-            "project_issue_url": "https://url",
+            "metadata": {
+                "project_tracking": {
+                    "issue_number": 123,
+                    "issue_url": "https://url",
+                }
+            },
         }
         assert requires_issue_creation(test_case) is False
 
@@ -192,11 +210,11 @@ class TestRequiresProjectPrCreation:
         assert requires_project_pr_creation(test_case) is False
 
     def test_no_pr_needed_when_catalog_destined(self) -> None:
-        """Should return False when catalog_destined is True."""
+        """Should return False when metadata.catalog.destined is True."""
         test_case: dict[str, Any] = {
             "title": "Test Case 1",
             "generated_script_path": "path/to/script.robot",
-            "catalog_destined": True,
+            "metadata": {"catalog": {"destined": True}},
         }
         assert requires_project_pr_creation(test_case) is False
 
@@ -205,8 +223,12 @@ class TestRequiresProjectPrCreation:
         test_case: dict[str, Any] = {
             "title": "Test Case 1",
             "generated_script_path": "path/to/script.robot",
-            "project_pr_number": 123,
-            "project_pr_url": "https://url",
+            "metadata": {
+                "project_tracking": {
+                    "pr_number": 123,
+                    "pr_url": "https://url",
+                }
+            },
         }
         assert requires_project_pr_creation(test_case) is False
 
@@ -215,7 +237,7 @@ class TestRequiresProjectPrCreation:
         test_case: dict[str, Any] = {
             "title": "Test Case 1",
             "generated_script_path": "path/to/script.robot",
-            "project_pr_number": 123,
+            "metadata": {"project_tracking": {"pr_number": 123}},
         }
         assert requires_project_pr_creation(test_case) is True
 
@@ -224,11 +246,11 @@ class TestRequiresCatalogPrCreation:
     """Tests for requires_catalog_pr_creation function."""
 
     def test_needs_catalog_pr_when_catalog_destined(self) -> None:
-        """Should return True when catalog_destined and script exists."""
+        """Should return True when metadata.catalog.destined and script exists."""
         test_case: dict[str, Any] = {
             "title": "Test Case 1",
             "generated_script_path": "path/to/script.robot",
-            "catalog_destined": True,
+            "metadata": {"catalog": {"destined": True}},
         }
         assert requires_catalog_pr_creation(test_case) is True
 
@@ -237,7 +259,7 @@ class TestRequiresCatalogPrCreation:
         test_case: dict[str, Any] = {
             "title": "Test Case 1",
             "generated_script_path": "path/to/script.robot",
-            "catalog_destined": False,
+            "metadata": {"catalog": {"destined": False}},
         }
         assert requires_catalog_pr_creation(test_case) is False
 
@@ -245,7 +267,7 @@ class TestRequiresCatalogPrCreation:
         """Should return False when no generated script."""
         test_case: dict[str, Any] = {
             "title": "Test Case 1",
-            "catalog_destined": True,
+            "metadata": {"catalog": {"destined": True}},
         }
         assert requires_catalog_pr_creation(test_case) is False
 
@@ -254,9 +276,13 @@ class TestRequiresCatalogPrCreation:
         test_case: dict[str, Any] = {
             "title": "Test Case 1",
             "generated_script_path": "path/to/script.robot",
-            "catalog_destined": True,
-            "catalog_pr_number": 123,
-            "catalog_pr_url": "https://url",
+            "metadata": {
+                "catalog": {"destined": True},
+                "catalog_tracking": {
+                    "pr_number": 123,
+                    "pr_url": "https://url",
+                },
+            },
         }
         assert requires_catalog_pr_creation(test_case) is False
 
@@ -425,12 +451,11 @@ class TestSaveTestCaseMetadata:
             filepath = tmppath / "my_test_cases.yaml"
             filepath.write_text("test_cases:\n  - title: Test 1\n")
 
-            # Load and modify
+            # Load and modify using nested structure
             test_cases = load_all_test_cases(tmppath)
             if test_cases:  # Only if file was found
                 test_case = test_cases[0]
-                test_case["project_issue_number"] = 999
-                test_case["project_issue_url"] = "https://test-url"
+                update_test_case_with_issue_metadata(test_case, 999, "https://test-url")
 
                 result = save_test_case_metadata(test_case)
 
@@ -438,4 +463,4 @@ class TestSaveTestCaseMetadata:
                 if result:
                     reloaded = load_test_cases_yaml(filepath)
                     assert reloaded is not None
-                    assert reloaded["test_cases"][0]["project_issue_number"] == 999
+                    assert reloaded["test_cases"][0]["metadata"]["project_tracking"]["issue_number"] == 999

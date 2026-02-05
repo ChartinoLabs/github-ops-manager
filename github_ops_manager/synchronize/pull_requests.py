@@ -462,8 +462,9 @@ async def create_catalog_pull_requests(
         logger.info("Processing catalog test case", title=title, script_path=script_path)
 
         # Check if PR already exists
-        existing_pr_number = test_case.get("catalog_pr_number")
-        existing_pr_url = test_case.get("catalog_pr_url")
+        catalog_tracking = test_case.get("metadata", {}).get("catalog_tracking", {})
+        existing_pr_number = catalog_tracking.get("pr_number")
+        existing_pr_url = catalog_tracking.get("pr_url")
 
         if existing_pr_number and existing_pr_url:
             logger.info("PR already exists for test case, skipping", title=title, pr_number=existing_pr_number, pr_url=existing_pr_url)

@@ -143,8 +143,9 @@ async def create_project_pr_for_test_case(
         pr_title = f"GenAI, Review: {title}"
 
         # Build PR body with issue reference if available
-        issue_number = test_case.get("project_issue_number")
-        issue_url = test_case.get("project_issue_url")
+        project_tracking = test_case.get("metadata", {}).get("project_tracking", {})
+        issue_number = project_tracking.get("issue_number")
+        issue_url = project_tracking.get("issue_url")
 
         if issue_number:
             pr_body = f"""**Quicksilver**: Automatically generated Pull Request for issue #{issue_number}.
