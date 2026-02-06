@@ -25,6 +25,11 @@ from github_ops_manager.processing.test_cases_processor import (
     update_test_case_with_pr_metadata,
     update_test_case_with_project_pr_metadata,
 )
+from github_ops_manager.synchronize.tracking_issues import (
+    compute_project_branch_name,
+    load_tracking_issue_template,
+    strip_os_tag_from_title,
+)
 from github_ops_manager.utils.constants import DEFAULT_MAX_ISSUE_BODY_LENGTH
 from github_ops_manager.utils.templates import construct_jinja2_template_from_file
 from github_ops_manager.utils.truncation import truncate_data_dict_outputs
@@ -81,6 +86,157 @@ async def create_issue_for_test_case(
 
     except Exception as e:
         logger.error("Failed to create issue for test case", title=title, error=str(e))
+        return None
+
+
+def _extract_os_from_catalog_branch(branch: str) -> str | None:
+    """Extract OS name from catalog branch name pattern.
+
+    Catalog branches follow the pattern: feat/{os_name}/add-{stem}
+
+    Args:
+        branch: Catalog branch name (e.g., "feat/nxos/add-verify-nxos-interfaces")
+
+    Returns:
+        OS name (e.g., "nxos") or None if pattern doesn't match
+    """
+    parts = branch.split("/")
+    if len(parts) >= 3 and parts[0] in ("feat", "feature"):
+        return parts[1]
+    return None
+
+
+async def create_tracking_issue_for_catalog_test_case(
+    test_case: dict[str, Any],
+    project_adapter: GitHubKitAdapter,
+    catalog_repo_url: str,
+    labels: list[str] | None = None,
+    catalog_pr_result: dict[str, Any] | None = None,
+) -> dict[str, Any] | None:
+    """Create a split-style tracking issue for a catalog-destined test case.
+
+    Uses the tracking_issue.j2 template to create an issue that references
+    the catalog PR and provides a task checklist for parameter learning.
+
+    This works for both same-run catalog PRs (catalog_pr_result provided)
+    and previous-run catalog PRs (metadata already in test case).
+
+    Args:
+        test_case: Test case dictionary with catalog_tracking metadata
+        project_adapter: GitHub adapter for project repository
+        catalog_repo_url: Full URL to catalog repository
+        labels: Optional list of labels to apply
+        catalog_pr_result: Optional result from create_catalog_pr_for_test_case
+            (provides os_name when catalog PR was created in same run)
+
+    Returns:
+        Created issue data or None on error
+    """
+    title = test_case.get("title")
+    if not title:
+        logger.error("Test case missing title, cannot create tracking issue")
+        return None
+
+    # Get catalog PR metadata from test case
+    catalog_tracking = test_case.get("metadata", {}).get("catalog_tracking", {})
+    catalog_pr_number = catalog_tracking.get("pr_number")
+    catalog_pr_url = catalog_tracking.get("pr_url")
+    catalog_branch = catalog_tracking.get("pr_branch")
+
+    if not catalog_pr_number or not catalog_pr_url or not catalog_branch:
+        logger.error(
+            "Test case missing catalog PR metadata for tracking issue",
+            title=title,
+        )
+        return None
+
+    # Extract OS name: prefer same-run result, fall back to branch parsing
+    os_name = None
+    if catalog_pr_result:
+        os_name = catalog_pr_result.get("os_name")
+    if not os_name:
+        os_name = _extract_os_from_catalog_branch(catalog_branch)
+    if not os_name:
+        logger.error("Could not determine OS name for tracking issue", title=title)
+        return None
+
+    # Construct catalog PR title from known pattern
+    catalog_dir = normalize_os_to_catalog_dir(os_name)
+    catalog_pr_title = f"feat: add {catalog_dir} test - {title}"
+
+    # Use helpers from tracking_issues module
+    clean_title = strip_os_tag_from_title(title)
+    suggested_branch = compute_project_branch_name(catalog_branch)
+
+    # Build test requirement data from test case
+    commands_list = []
+    if "commands" in test_case:
+        for cmd in test_case["commands"]:
+            if isinstance(cmd, dict):
+                commands_list.append(cmd.get("command", ""))
+            else:
+                commands_list.append(str(cmd))
+
+    test_requirement = {
+        "purpose": test_case.get("purpose", ""),
+        "commands": commands_list,
+        "pass_criteria": test_case.get("pass_criteria", ""),
+        "sample_parameters": test_case.get("jobfile_parameters", ""),
+        "parameters_to_parsed_data_mapping": test_case.get("jobfile_parameters_mapping", ""),
+    }
+
+    # Load and render the tracking issue template
+    template = load_tracking_issue_template()
+    issue_body = template.render(
+        catalog_pr_title=catalog_pr_title,
+        catalog_pr_url=catalog_pr_url,
+        catalog_pr_number=catalog_pr_number,
+        catalog_branch=catalog_branch,
+        suggested_project_branch=suggested_branch,
+        test_case_title=title,
+        test_case_title_clean=clean_title,
+        os_name=os_name.upper(),
+        test_requirement=test_requirement,
+    )
+
+    issue_title = f"Review Catalog PR and Learn Parameters: {title}"
+
+    logger.info(
+        "Creating tracking issue for catalog-destined test case",
+        title=title,
+        catalog_pr_number=catalog_pr_number,
+    )
+
+    try:
+        issue = await project_adapter.create_issue(
+            title=issue_title,
+            body=issue_body,
+            labels=labels,
+        )
+
+        logger.info(
+            "Created tracking issue for catalog-destined test case",
+            title=title,
+            issue_number=issue.number,
+            issue_url=issue.html_url,
+            catalog_pr_number=catalog_pr_number,
+        )
+
+        # Update test case with issue metadata
+        update_test_case_with_issue_metadata(test_case, issue.number, issue.html_url)
+
+        return {
+            "issue": issue,
+            "issue_number": issue.number,
+            "issue_url": issue.html_url,
+        }
+
+    except Exception as e:
+        logger.error(
+            "Failed to create tracking issue for catalog-destined test case",
+            title=title,
+            error=str(e),
+        )
         return None
 
 
@@ -210,6 +366,7 @@ async def create_catalog_pr_for_test_case(
     base_directory: Path,
     default_branch: str,
     catalog_repo_url: str,
+    labels: list[str] | None = None,
 ) -> dict[str, Any] | None:
     """Create a catalog PR for a test case and update metadata.
 
@@ -219,6 +376,7 @@ async def create_catalog_pr_for_test_case(
         base_directory: Base directory for resolving file paths
         default_branch: Default branch to base PR on
         catalog_repo_url: Full URL to catalog repository
+        labels: Optional list of labels to apply to the PR
 
     Returns:
         Created PR data or None on error
@@ -297,6 +455,10 @@ This PR adds test automation generated by tac-quicksilver to the catalog for reu
             pr_number=new_pr.number,
             pr_url=new_pr.html_url,
         )
+
+        # Apply labels to PR (GitHub treats PRs as issues for labels)
+        if labels:
+            await github_adapter.set_labels_on_issue(new_pr.number, labels)
 
         # Update test case with catalog PR metadata
         update_test_case_with_pr_metadata(test_case, new_pr, catalog_repo_url)
@@ -444,28 +606,81 @@ async def process_test_requirements(
         title = test_case.get("title", "Unknown")
         logger.info("Processing test case", title=title)
 
-        # Check if issue needs to be created
-        if requires_issue_creation(test_case):
-            if template:
-                try:
-                    issue_body = render_issue_body_for_test_case(test_case, template, max_body_length=max_body_length)
-                except Exception as e:
-                    logger.error("Failed to render issue body", title=title, error=str(e))
-                    results["errors"].append(f"Failed to render issue body for {title}: {e}")
-                    continue
-            else:
-                # Simple default body
-                issue_body = f"Test requirement: {title}\n\n{test_case.get('purpose', '')}"
+        # Track catalog PR result for use during issue creation (same-run)
+        catalog_pr_result = None
 
-            # Get labels from test case or use default
+        # Create catalog PR first (if needed) so that catalog-destined test
+        # cases have catalog_tracking metadata before issue creation runs.
+        # This allows the project issue to reference the catalog PR.
+        if requires_catalog_pr_creation(test_case):
+            if not catalog_adapter or not catalog_default_branch or not catalog_repo_url:
+                logger.warning(
+                    "Catalog PR needed but catalog configuration not provided",
+                    title=title,
+                )
+                results["errors"].append(f"Catalog PR needed for {title} but catalog not configured")
+                continue
+
+            # Build catalog PR labels: start from test case / default labels,
+            # remove issue-specific labels, and add "quicksilver"
+            catalog_pr_labels = list(test_case.get("labels", issue_labels) or [])
+            if "script-already-created" in catalog_pr_labels:
+                catalog_pr_labels.remove("script-already-created")
+            if "quicksilver" not in catalog_pr_labels:
+                catalog_pr_labels.append("quicksilver")
+
+            catalog_pr_result = await create_catalog_pr_for_test_case(
+                test_case,
+                catalog_adapter,
+                base_directory,
+                catalog_default_branch,
+                catalog_repo_url,
+                labels=catalog_pr_labels,
+            )
+
+            if catalog_pr_result:
+                results["catalog_prs_created"] += 1
+                # Save metadata back to file
+                save_test_case_metadata(test_case)
+
+        # Check if issue needs to be created. For catalog-destined test cases,
+        # this will only proceed if a catalog PR already exists (either created
+        # above or in a previous run).
+        if requires_issue_creation(test_case):
+            is_catalog = test_case.get("metadata", {}).get("catalog", {}).get("destined", False)
             labels = test_case.get("labels", issue_labels)
 
-            issue_result = await create_issue_for_test_case(
-                test_case,
-                project_adapter,
-                issue_body,
-                labels=labels,
-            )
+            if is_catalog:
+                # Use split-style tracking issue for catalog-destined test cases.
+                # This renders tracking_issue.j2 with catalog PR reference and
+                # task checklist for parameter learning workflow.
+                issue_result = await create_tracking_issue_for_catalog_test_case(
+                    test_case,
+                    project_adapter,
+                    catalog_repo_url or "",
+                    labels=labels,
+                    catalog_pr_result=catalog_pr_result,
+                )
+            else:
+                # Use collapsed-style issue for non-catalog test cases.
+                # This renders the issue template with full test requirement details.
+                if template:
+                    try:
+                        issue_body = render_issue_body_for_test_case(test_case, template, max_body_length=max_body_length)
+                    except Exception as e:
+                        logger.error("Failed to render issue body", title=title, error=str(e))
+                        results["errors"].append(f"Failed to render issue body for {title}: {e}")
+                        continue
+                else:
+                    # Simple default body
+                    issue_body = f"Test requirement: {title}\n\n{test_case.get('purpose', '')}"
+
+                issue_result = await create_issue_for_test_case(
+                    test_case,
+                    project_adapter,
+                    issue_body,
+                    labels=labels,
+                )
 
             if issue_result:
                 results["issues_created"] += 1
@@ -484,29 +699,6 @@ async def process_test_requirements(
 
             if pr_result:
                 results["project_prs_created"] += 1
-                # Save metadata back to file
-                save_test_case_metadata(test_case)
-
-        # Check if catalog PR needs to be created
-        if requires_catalog_pr_creation(test_case):
-            if not catalog_adapter or not catalog_default_branch or not catalog_repo_url:
-                logger.warning(
-                    "Catalog PR needed but catalog configuration not provided",
-                    title=title,
-                )
-                results["errors"].append(f"Catalog PR needed for {title} but catalog not configured")
-                continue
-
-            pr_result = await create_catalog_pr_for_test_case(
-                test_case,
-                catalog_adapter,
-                base_directory,
-                catalog_default_branch,
-                catalog_repo_url,
-            )
-
-            if pr_result:
-                results["catalog_prs_created"] += 1
                 # Save metadata back to file
                 save_test_case_metadata(test_case)
 
