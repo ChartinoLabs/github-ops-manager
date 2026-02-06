@@ -621,13 +621,21 @@ async def process_test_requirements(
                 results["errors"].append(f"Catalog PR needed for {title} but catalog not configured")
                 continue
 
+            # Build catalog PR labels: start from test case / default labels,
+            # remove issue-specific labels, and add "quicksilver"
+            catalog_pr_labels = list(test_case.get("labels", issue_labels) or [])
+            if "script-already-created" in catalog_pr_labels:
+                catalog_pr_labels.remove("script-already-created")
+            if "quicksilver" not in catalog_pr_labels:
+                catalog_pr_labels.append("quicksilver")
+
             catalog_pr_result = await create_catalog_pr_for_test_case(
                 test_case,
                 catalog_adapter,
                 base_directory,
                 catalog_default_branch,
                 catalog_repo_url,
-                labels=test_case.get("labels", issue_labels),
+                labels=catalog_pr_labels,
             )
 
             if catalog_pr_result:
