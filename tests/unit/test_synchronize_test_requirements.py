@@ -100,7 +100,7 @@ class TestCreateIssueForTestCase:
 
     @pytest.mark.asyncio
     async def test_updates_test_case_with_metadata(self) -> None:
-        """Should update test case dict with issue metadata."""
+        """Should update test case dict with issue metadata in nested structure."""
         mock_adapter = AsyncMock()
         mock_issue = MagicMock()
         mock_issue.number = 456
@@ -111,8 +111,8 @@ class TestCreateIssueForTestCase:
 
         await create_issue_for_test_case(test_case, mock_adapter, "Body")
 
-        assert test_case["project_issue_number"] == 456
-        assert test_case["project_issue_url"] == "https://github.com/org/repo/issues/456"
+        assert test_case["metadata"]["project_tracking"]["issue_number"] == 456
+        assert test_case["metadata"]["project_tracking"]["issue_url"] == "https://github.com/org/repo/issues/456"
 
     @pytest.mark.asyncio
     async def test_returns_none_on_missing_title(self) -> None:
@@ -195,8 +195,12 @@ class TestCreateProjectPrForTestCase:
             test_case: dict[str, Any] = {
                 "title": "Test Case 1",
                 "generated_script_path": script_path,
-                "project_issue_number": 42,
-                "project_issue_url": "https://github.com/org/repo/issues/42",
+                "metadata": {
+                    "project_tracking": {
+                        "issue_number": 42,
+                        "issue_url": "https://github.com/org/repo/issues/42",
+                    }
+                },
             }
 
             await create_project_pr_for_test_case(
@@ -477,13 +481,15 @@ class TestProcessTestRequirements:
         """Should skip test cases that already have issue metadata."""
         with tempfile.TemporaryDirectory() as tmpdir:
             test_cases_dir = Path(tmpdir)
-            # Create test case file with existing metadata
+            # Create test case file with existing nested metadata
             (test_cases_dir / "my_test_cases.yaml").write_text(
                 """test_cases:
   - title: Test Case 1
     purpose: Test purpose
-    project_issue_number: 123
-    project_issue_url: https://existing-url
+    metadata:
+      project_tracking:
+        issue_number: 123
+        issue_url: https://existing-url
     commands:
       - command: show version
 """
@@ -516,9 +522,11 @@ class TestProcessTestRequirements:
                 f"""test_cases:
   - title: Test Case 1
     purpose: Test purpose
-    project_issue_number: 1
-    project_issue_url: https://url
     generated_script_path: {script_path}
+    metadata:
+      project_tracking:
+        issue_number: 1
+        issue_url: https://url
     commands:
       - command: show version
 """
@@ -564,10 +572,13 @@ Test
                 f"""test_cases:
   - title: Test Case 1
     purpose: Test purpose
-    project_issue_number: 1
-    project_issue_url: https://url
     generated_script_path: {script_path}
-    catalog_destined: true
+    metadata:
+      project_tracking:
+        issue_number: 1
+        issue_url: https://url
+      catalog:
+        destined: true
     commands:
       - command: show version
 """
@@ -619,10 +630,13 @@ Test
                 f"""test_cases:
   - title: Test Case 1
     purpose: Test purpose
-    project_issue_number: 1
-    project_issue_url: https://url
     generated_script_path: {script_path}
-    catalog_destined: true
+    metadata:
+      project_tracking:
+        issue_number: 1
+        issue_url: https://url
+      catalog:
+        destined: true
     commands:
       - command: show version
 """
