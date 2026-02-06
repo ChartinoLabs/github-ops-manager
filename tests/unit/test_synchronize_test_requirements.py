@@ -408,6 +408,84 @@ Test
             assert result["catalog_path"] == "catalog/IOS-XE/verify_ios_xe_interfaces.robot"
 
     @pytest.mark.asyncio
+    async def test_applies_labels_to_catalog_pr(self) -> None:
+        """Should apply labels to the catalog PR after creation."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            base_dir = Path(tmpdir)
+            script_path = "verify_nxos_interfaces.robot"
+            robot_content = """*** Settings ***
+Test Tags    os:nxos    category:foundations
+
+*** Test Cases ***
+Test
+    Log    Hello
+"""
+            (base_dir / script_path).write_text(robot_content)
+
+            mock_adapter = AsyncMock()
+            mock_adapter.branch_exists.return_value = False
+            mock_pr = MagicMock()
+            mock_pr.number = 101
+            mock_pr.html_url = "https://github.com/catalog/repo/pull/101"
+            mock_pr.head.ref = "feat/nxos/add-verify-nxos-interfaces"
+            mock_adapter.create_pull_request.return_value = mock_pr
+
+            test_case: dict[str, Any] = {
+                "title": "Test Case 1",
+                "generated_script_path": script_path,
+            }
+
+            result = await create_catalog_pr_for_test_case(
+                test_case,
+                mock_adapter,
+                base_dir,
+                "main",
+                "https://github.com/catalog/repo",
+                labels=["quicksilver", "GenAI"],
+            )
+
+            assert result is not None
+            mock_adapter.set_labels_on_issue.assert_called_once_with(101, ["quicksilver", "GenAI"])
+
+    @pytest.mark.asyncio
+    async def test_skips_labels_when_none(self) -> None:
+        """Should not call set_labels_on_issue when no labels provided."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            base_dir = Path(tmpdir)
+            script_path = "verify_nxos_interfaces.robot"
+            robot_content = """*** Settings ***
+Test Tags    os:nxos
+
+*** Test Cases ***
+Test
+    Log    Hello
+"""
+            (base_dir / script_path).write_text(robot_content)
+
+            mock_adapter = AsyncMock()
+            mock_adapter.branch_exists.return_value = False
+            mock_pr = MagicMock()
+            mock_pr.number = 101
+            mock_pr.html_url = "https://github.com/catalog/repo/pull/101"
+            mock_pr.head.ref = "feat/nxos/add-verify-nxos-interfaces"
+            mock_adapter.create_pull_request.return_value = mock_pr
+
+            test_case: dict[str, Any] = {
+                "title": "Test Case 1",
+                "generated_script_path": script_path,
+            }
+
+            await create_catalog_pr_for_test_case(
+                test_case,
+                mock_adapter,
+                base_dir,
+                "main",
+                "https://github.com/catalog/repo",
+            )
+
+            mock_adapter.set_labels_on_issue.assert_not_called()
+
+    @pytest.mark.asyncio
     async def test_returns_none_when_os_not_detected(self) -> None:
         """Should return None if OS cannot be extracted."""
         with tempfile.TemporaryDirectory() as tmpdir:
