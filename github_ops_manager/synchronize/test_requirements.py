@@ -444,7 +444,34 @@ async def process_test_requirements(
         title = test_case.get("title", "Unknown")
         logger.info("Processing test case", title=title)
 
-        # Check if issue needs to be created
+        # Create catalog PR first (if needed) so that catalog-destined test
+        # cases have catalog_tracking metadata before issue creation runs.
+        # This allows the project issue to reference the catalog PR.
+        if requires_catalog_pr_creation(test_case):
+            if not catalog_adapter or not catalog_default_branch or not catalog_repo_url:
+                logger.warning(
+                    "Catalog PR needed but catalog configuration not provided",
+                    title=title,
+                )
+                results["errors"].append(f"Catalog PR needed for {title} but catalog not configured")
+                continue
+
+            pr_result = await create_catalog_pr_for_test_case(
+                test_case,
+                catalog_adapter,
+                base_directory,
+                catalog_default_branch,
+                catalog_repo_url,
+            )
+
+            if pr_result:
+                results["catalog_prs_created"] += 1
+                # Save metadata back to file
+                save_test_case_metadata(test_case)
+
+        # Check if issue needs to be created. For catalog-destined test cases,
+        # this will only proceed if a catalog PR already exists (either created
+        # above or in a previous run).
         if requires_issue_creation(test_case):
             if template:
                 try:
@@ -484,29 +511,6 @@ async def process_test_requirements(
 
             if pr_result:
                 results["project_prs_created"] += 1
-                # Save metadata back to file
-                save_test_case_metadata(test_case)
-
-        # Check if catalog PR needs to be created
-        if requires_catalog_pr_creation(test_case):
-            if not catalog_adapter or not catalog_default_branch or not catalog_repo_url:
-                logger.warning(
-                    "Catalog PR needed but catalog configuration not provided",
-                    title=title,
-                )
-                results["errors"].append(f"Catalog PR needed for {title} but catalog not configured")
-                continue
-
-            pr_result = await create_catalog_pr_for_test_case(
-                test_case,
-                catalog_adapter,
-                base_directory,
-                catalog_default_branch,
-                catalog_repo_url,
-            )
-
-            if pr_result:
-                results["catalog_prs_created"] += 1
                 # Save metadata back to file
                 save_test_case_metadata(test_case)
 

@@ -352,8 +352,12 @@ def update_test_case_with_project_pr_metadata(
 def requires_issue_creation(test_case: dict[str, Any]) -> bool:
     """Check if a test case needs an issue to be created.
 
-    An issue is needed if the test case doesn't already have issue metadata.
-    Checks nested structure: metadata.project_tracking.{issue_number, issue_url}
+    An issue is needed if:
+    - The test case doesn't already have issue metadata
+      (metadata.project_tracking.{issue_number, issue_url})
+    - For catalog-destined test cases, a catalog PR must already exist
+      (metadata.catalog_tracking.pr_number) before an issue is created.
+      This ensures the project issue can reference the catalog PR.
 
     Args:
         test_case: Test case dictionary to check
@@ -361,11 +365,22 @@ def requires_issue_creation(test_case: dict[str, Any]) -> bool:
     Returns:
         True if issue needs to be created, False otherwise
     """
-    project_tracking = test_case.get("metadata", {}).get("project_tracking", {})
+    metadata = test_case.get("metadata", {})
+    project_tracking = metadata.get("project_tracking", {})
     has_issue_number = project_tracking.get("issue_number") is not None
     has_issue_url = project_tracking.get("issue_url") is not None
 
-    return not (has_issue_number and has_issue_url)
+    if has_issue_number and has_issue_url:
+        return False
+
+    # For catalog-destined test cases, defer issue creation until
+    # a catalog PR exists so the issue can reference it
+    is_catalog = metadata.get("catalog", {}).get("destined", False)
+    if is_catalog:
+        has_catalog_pr = metadata.get("catalog_tracking", {}).get("pr_number") is not None
+        return has_catalog_pr
+
+    return True
 
 
 def requires_project_pr_creation(test_case: dict[str, Any]) -> bool:

@@ -612,6 +612,102 @@ Test
             mock_catalog_adapter.create_pull_request.assert_called_once()
 
     @pytest.mark.asyncio
+    async def test_catalog_destined_creates_issue_after_catalog_pr(self) -> None:
+        """Should create both catalog PR and issue in one run for catalog-destined test case."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            test_cases_dir = Path(tmpdir)
+            script_path = "verify_nxos_test.robot"
+            robot_content = """*** Settings ***
+Test Tags    os:nxos
+
+*** Test Cases ***
+Test
+    Log    Hello
+"""
+            (test_cases_dir / script_path).write_text(robot_content)
+
+            (test_cases_dir / "my_test_cases.yaml").write_text(
+                f"""test_cases:
+  - title: Test Case 1
+    purpose: Test purpose
+    generated_script_path: {script_path}
+    metadata:
+      catalog:
+        destined: true
+    commands:
+      - command: show version
+"""
+            )
+
+            mock_project_adapter = AsyncMock()
+            mock_issue = MagicMock()
+            mock_issue.number = 50
+            mock_issue.html_url = "https://github.com/org/repo/issues/50"
+            mock_project_adapter.create_issue.return_value = mock_issue
+
+            mock_catalog_adapter = AsyncMock()
+            mock_catalog_adapter.branch_exists.return_value = False
+            mock_pr = MagicMock()
+            mock_pr.number = 20
+            mock_pr.html_url = "https://github.com/catalog/repo/pull/20"
+            mock_pr.head.ref = "feat/nxos/add-test"
+            mock_catalog_adapter.create_pull_request.return_value = mock_pr
+
+            with patch(
+                "github_ops_manager.synchronize.test_requirements.save_test_case_metadata",
+                return_value=True,
+            ):
+                results = await process_test_requirements(
+                    test_cases_dir=test_cases_dir,
+                    base_directory=test_cases_dir,
+                    project_adapter=mock_project_adapter,
+                    project_default_branch="main",
+                    project_repo_url="https://github.com/org/repo",
+                    catalog_adapter=mock_catalog_adapter,
+                    catalog_default_branch="main",
+                    catalog_repo_url="https://github.com/catalog/repo",
+                )
+
+            # Catalog PR created first, then issue
+            assert results["catalog_prs_created"] == 1
+            assert results["issues_created"] == 1
+            mock_catalog_adapter.create_pull_request.assert_called_once()
+            mock_project_adapter.create_issue.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_catalog_destined_skips_issue_without_catalog_pr(self) -> None:
+        """Should NOT create issue for catalog-destined test case without generated script."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            test_cases_dir = Path(tmpdir)
+
+            # No generated_script_path, so no catalog PR will be created
+            (test_cases_dir / "my_test_cases.yaml").write_text(
+                """test_cases:
+  - title: Test Case 1
+    purpose: Test purpose
+    metadata:
+      catalog:
+        destined: true
+    commands:
+      - command: show version
+"""
+            )
+
+            mock_project_adapter = AsyncMock()
+
+            results = await process_test_requirements(
+                test_cases_dir=test_cases_dir,
+                base_directory=test_cases_dir,
+                project_adapter=mock_project_adapter,
+                project_default_branch="main",
+                project_repo_url="https://github.com/org/repo",
+            )
+
+            assert results["issues_created"] == 0
+            assert results["catalog_prs_created"] == 0
+            mock_project_adapter.create_issue.assert_not_called()
+
+    @pytest.mark.asyncio
     async def test_reports_error_when_catalog_not_configured(self) -> None:
         """Should report error when catalog PR needed but not configured."""
         with tempfile.TemporaryDirectory() as tmpdir:

@@ -159,7 +159,7 @@ class TestRequiresIssueCreation:
     """Tests for requires_issue_creation function."""
 
     def test_needs_issue_when_no_metadata(self) -> None:
-        """Should return True when no issue metadata exists."""
+        """Should return True when no issue metadata exists (non-catalog)."""
         test_case: dict[str, Any] = {"title": "Test Case 1"}
         assert requires_issue_creation(test_case) is True
 
@@ -191,6 +191,45 @@ class TestRequiresIssueCreation:
             },
         }
         assert requires_issue_creation(test_case) is False
+
+    def test_catalog_destined_defers_without_catalog_pr(self) -> None:
+        """Should return False for catalog-destined test case without catalog PR."""
+        test_case: dict[str, Any] = {
+            "title": "Test Case 1",
+            "metadata": {"catalog": {"destined": True}},
+        }
+        assert requires_issue_creation(test_case) is False
+
+    def test_catalog_destined_proceeds_with_catalog_pr(self) -> None:
+        """Should return True for catalog-destined test case with catalog PR."""
+        test_case: dict[str, Any] = {
+            "title": "Test Case 1",
+            "metadata": {
+                "catalog": {"destined": True},
+                "catalog_tracking": {"pr_number": 456, "pr_url": "https://catalog-pr"},
+            },
+        }
+        assert requires_issue_creation(test_case) is True
+
+    def test_catalog_destined_skips_when_issue_already_exists(self) -> None:
+        """Should return False for catalog-destined test case that already has an issue."""
+        test_case: dict[str, Any] = {
+            "title": "Test Case 1",
+            "metadata": {
+                "catalog": {"destined": True},
+                "catalog_tracking": {"pr_number": 456, "pr_url": "https://catalog-pr"},
+                "project_tracking": {"issue_number": 10, "issue_url": "https://issue"},
+            },
+        }
+        assert requires_issue_creation(test_case) is False
+
+    def test_non_catalog_destined_ignores_catalog_tracking(self) -> None:
+        """Should return True for non-catalog test case regardless of catalog_tracking."""
+        test_case: dict[str, Any] = {
+            "title": "Test Case 1",
+            "metadata": {"catalog": {"destined": False}},
+        }
+        assert requires_issue_creation(test_case) is True
 
 
 class TestRequiresProjectPrCreation:
