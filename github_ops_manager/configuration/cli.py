@@ -256,6 +256,14 @@ def process_test_requirements_cli(
             "If provided, migrates existing issue/PR metadata to test_cases.yaml before processing.",
         ),
     ] = None,
+    cxtm_file: Annotated[
+        Path | None,
+        Option(
+            envvar="CXTM_FILE",
+            help="Path to cxtm.yaml file. If provided, enriches issue bodies with test case "
+            "definitions from cxtm.yaml (title, robot_file, git_commit_sha, etc.).",
+        ),
+    ] = None,
 ) -> None:
     """Process test requirements directly from test_cases.yaml files.
 
@@ -404,6 +412,7 @@ def process_test_requirements_cli(
             catalog_repo_url=catalog_repo_url,
             issue_template_path=issue_template,
             issue_labels=parsed_labels,
+            cxtm_file_path=cxtm_file,
         )
 
     results = asyncio.run(run_processing())
