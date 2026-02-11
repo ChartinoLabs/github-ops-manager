@@ -46,12 +46,12 @@ metadata:
 
 - [ ] Execute the following command to learn parameters and validate whether test case parameters are successfully inserted into the cxtm.yaml file. If any errors occur, troubleshoot and resolve them by editing the test automation script in the branch associated with the Catalog PR in the Catalog repository:
   ```bash
-  tac-tools scripts learn "{{ test_requirement.test_case_group_name or test_case_title_clean }}"
+  tac-tools scripts learn "{{ test_requirement.test_case_group_name }}"
   ```
 
 - [ ] Execute the following command to run tests and validate whether test case parameters are successfully validated against the testbed. If any errors occur, troubleshoot and verify that they are not due to a legitimate issue with the testbed. If the testbed is healthy, edit the test automation script in the branch associated with the Catalog PR in the Catalog repository:
   ```bash
-  tac-tools scripts run "{{ test_requirement.test_case_group_name or test_case_title_clean }}"
+  tac-tools scripts run "{{ test_requirement.test_case_group_name }}"
   ```
 
 - [ ] When the test automation script in the Catalog repository is in a known working condition, assign a Catalog reviewer to review the PR

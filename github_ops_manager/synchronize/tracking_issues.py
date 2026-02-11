@@ -113,10 +113,6 @@ async def create_tracking_issue_for_catalog_pr(
     test_case = test_cases[0]
     test_case_title = test_case.get("title", "Untitled Test Case")
 
-    # Strip OS tag from title for CLI commands (e.g., "[IOS-XE] Do Thing" -> "Do Thing")
-    # This matches the test case group name that will appear in cxtm.yaml
-    clean_title = strip_os_tag_from_title(test_case_title)
-
     # Compute suggested project branch name from catalog branch
     suggested_branch = compute_project_branch_name(catalog_pr.head.ref)
 
@@ -158,7 +154,6 @@ async def create_tracking_issue_for_catalog_pr(
         catalog_branch=catalog_pr.head.ref,
         suggested_project_branch=suggested_branch,
         test_case_title=test_case_title,  # Original title with OS tag for display
-        test_case_title_clean=clean_title,  # Clean title for CLI commands
         os_name=os_name.upper(),
         test_requirement=test_requirement,
     )
