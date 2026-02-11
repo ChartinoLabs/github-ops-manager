@@ -20,11 +20,14 @@ sample_parameters: |
 {{ test_requirement.sample_parameters | indent(2, first=True) }}
 parameters_to_parsed_data_mapping: |
 {{ test_requirement.parameters_to_parsed_data_mapping | indent(2, first=True) }}
-{% if test_requirement.test_plan_group_name -%}
-test_plan_group_name: "{{ test_requirement.test_plan_group_name }}"
+{% if test_requirement.test_case_group_name -%}
+test_case_group_name: "{{ test_requirement.test_case_group_name }}"
 {% endif -%}
-{% if test_requirement.test_plan_identifier -%}
-test_plan_identifier: "{{ test_requirement.test_plan_identifier }}"
+{% if test_requirement.test_case_identifier -%}
+test_case_identifier: "{{ test_requirement.test_case_identifier }}"
+{% endif -%}
+{% if test_requirement.test_case_title -%}
+test_case_title: "{{ test_requirement.test_case_title }}"
 {% endif -%}
 ```
 
@@ -39,12 +42,12 @@ test_plan_identifier: "{{ test_requirement.test_plan_identifier }}"
 
 - [ ] Execute the following command to learn parameters and validate whether test case parameters are successfully inserted into the cxtm.yaml file. If any errors occur, troubleshoot and resolve them by editing the test automation script in the branch associated with the Catalog PR in the Catalog repository:
   ```bash
-  tac-tools scripts learn "{{ test_requirement.test_plan_group_name or test_case_title_clean }}"
+  tac-tools scripts learn "{{ test_requirement.test_case_group_name or test_case_title_clean }}"
   ```
 
 - [ ] Execute the following command to run tests and validate whether test case parameters are successfully validated against the testbed. If any errors occur, troubleshoot and verify that they are not due to a legitimate issue with the testbed. If the testbed is healthy, edit the test automation script in the branch associated with the Catalog PR in the Catalog repository:
   ```bash
-  tac-tools scripts run "{{ test_requirement.test_plan_group_name or test_case_title_clean }}"
+  tac-tools scripts run "{{ test_requirement.test_case_group_name or test_case_title_clean }}"
   ```
 
 - [ ] When the test automation script in the Catalog repository is in a known working condition, assign a Catalog reviewer to review the PR
