@@ -132,12 +132,19 @@ async def create_tracking_issue_for_catalog_pr(
             else:
                 commands_list.append(str(cmd))
 
+    # Extract test_plan metadata injected by tac-tools synchronizer expand
+    test_plan_metadata = test_case.get("metadata", {}).get("test_plan", {})
+    test_plan_group_name = test_plan_metadata.get("group_name", "")
+    test_plan_identifier = test_plan_metadata.get("identifier", "")
+
     test_requirement = {
         "purpose": test_case.get("purpose", ""),
         "commands": commands_list,
         "pass_criteria": test_case.get("pass_criteria", ""),
         "sample_parameters": test_case.get("jobfile_parameters", ""),
         "parameters_to_parsed_data_mapping": test_case.get("jobfile_parameters_mapping", ""),
+        "test_plan_group_name": test_plan_group_name,
+        "test_plan_identifier": test_plan_identifier,
     }
 
     # Load and render the tracking issue template
