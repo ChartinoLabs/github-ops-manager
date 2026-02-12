@@ -503,7 +503,6 @@ def render_issue_body_for_test_case(
     test_case: dict[str, Any],
     template: jinja2.Template,
     max_body_length: int | None = None,
-    cxtm_config: Any | None = None,
 ) -> str:
     """Render issue body for a test case using the template.
 
@@ -511,7 +510,6 @@ def render_issue_body_for_test_case(
         test_case: Test case dictionary with all fields
         template: Jinja2 template for issue body
         max_body_length: Optional max length for issue body (truncates outputs if needed)
-        cxtm_config: Optional CXTMConfiguration for enriching with test case definitions
 
     Returns:
         Rendered issue body string
@@ -529,23 +527,6 @@ def render_issue_body_for_test_case(
         "jobfile_parameters_mapping": test_case.get("jobfile_parameters_mapping", ""),
         "commands": commands_as_dicts,
     }
-
-    # Look up test case definition in cxtm.yaml and add to render context
-    if cxtm_config:
-        from github_ops_manager.utils.cxtm import find_test_case_by_title, format_test_case_yaml_block
-
-        title = test_case.get("title", "")
-        group, cxtm_test_case = find_test_case_by_title(cxtm_config, title)
-        if group and cxtm_test_case:
-            render_context["test_case_definition"] = format_test_case_yaml_block(group, cxtm_test_case)
-            logger.debug(
-                "Found cxtm.yaml test case definition",
-                title=title,
-                group_name=group.name,
-                test_case_id=cxtm_test_case.identifier,
-            )
-        else:
-            logger.debug("No cxtm.yaml test case definition found", title=title)
 
     # Apply truncation to command outputs if max_body_length is specified
     if max_body_length is not None:
@@ -570,7 +551,6 @@ async def process_test_requirements(
     issue_template_path: Path | None = None,
     issue_labels: list[str] | None = None,
     max_body_length: int = DEFAULT_MAX_ISSUE_BODY_LENGTH,
-    cxtm_file_path: Path | None = None,
 ) -> dict[str, Any]:
     """Process all test requirements: create issues and PRs as needed.
 
@@ -589,7 +569,6 @@ async def process_test_requirements(
         issue_template_path: Optional path to Jinja2 template for issue bodies
         issue_labels: Optional list of labels to apply to issues
         max_body_length: Maximum issue body length (truncates outputs if exceeded)
-        cxtm_file_path: Optional path to cxtm.yaml for enriching issues with test case definitions
 
     Returns:
         Summary dict with counts and results
@@ -599,26 +578,6 @@ async def process_test_requirements(
         test_cases_dir=str(test_cases_dir),
         base_directory=str(base_directory),
     )
-
-    # Load cxtm.yaml configuration if provided
-    cxtm_config = None
-    if cxtm_file_path:
-        from github_ops_manager.utils.cxtm import load_cxtm_configuration
-
-        try:
-            cxtm_config = load_cxtm_configuration(cxtm_file_path)
-            logger.info(
-                "Loaded cxtm.yaml configuration",
-                cxtm_file=str(cxtm_file_path),
-                test_case_groups=len(cxtm_config.test_case_groups),
-            )
-        except Exception as e:
-            logger.warning(
-                "Failed to load cxtm.yaml, proceeding without test case definitions",
-                cxtm_file=str(cxtm_file_path),
-                error=str(e),
-            )
-            cxtm_config = None
 
     # Load issue body template if provided
     template = None
@@ -707,7 +666,7 @@ async def process_test_requirements(
                 # This renders the issue template with full test requirement details.
                 if template:
                     try:
-                        issue_body = render_issue_body_for_test_case(test_case, template, max_body_length=max_body_length, cxtm_config=cxtm_config)
+                        issue_body = render_issue_body_for_test_case(test_case, template, max_body_length=max_body_length)
                     except Exception as e:
                         logger.error("Failed to render issue body", title=title, error=str(e))
                         results["errors"].append(f"Failed to render issue body for {title}: {e}")
