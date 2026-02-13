@@ -185,6 +185,13 @@ async def create_tracking_issue_for_catalog_test_case(
         "parameters_to_parsed_data_mapping": test_case.get("jobfile_parameters_mapping", ""),
     }
 
+    # Extract test_plan metadata if present for inclusion in tracking issue
+    test_plan = test_case.get("metadata", {}).get("test_plan", {})
+    if test_plan:
+        test_requirement["test_case_group_name"] = test_plan.get("test_case_group_name", "")
+        test_requirement["test_case_identifier"] = test_plan.get("test_case_identifier", "")
+        test_requirement["test_case_title"] = test_plan.get("test_case_title", "")
+
     # Load and render the tracking issue template
     template = load_tracking_issue_template()
     issue_body = template.render(
