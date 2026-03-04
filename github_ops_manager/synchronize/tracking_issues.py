@@ -113,10 +113,6 @@ async def create_tracking_issue_for_catalog_pr(
     test_case = test_cases[0]
     test_case_title = test_case.get("title", "Untitled Test Case")
 
-    # Strip OS tag from title for CLI commands (e.g., "[IOS-XE] Do Thing" -> "Do Thing")
-    # This matches the test case group name that will appear in cxtm.yaml
-    clean_title = strip_os_tag_from_title(test_case_title)
-
     # Compute suggested project branch name from catalog branch
     suggested_branch = compute_project_branch_name(catalog_pr.head.ref)
 
@@ -132,12 +128,21 @@ async def create_tracking_issue_for_catalog_pr(
             else:
                 commands_list.append(str(cmd))
 
+    # Extract test_plan metadata injected by tac-tools synchronizer expand
+    test_plan_metadata = test_case.get("metadata", {}).get("test_plan", {})
+    test_case_group_name = test_plan_metadata.get("test_case_group_name", "")
+    test_case_identifier = test_plan_metadata.get("test_case_identifier", "")
+    test_case_title_from_metadata = test_plan_metadata.get("test_case_title", "")
+
     test_requirement = {
         "purpose": test_case.get("purpose", ""),
         "commands": commands_list,
         "pass_criteria": test_case.get("pass_criteria", ""),
         "sample_parameters": test_case.get("jobfile_parameters", ""),
         "parameters_to_parsed_data_mapping": test_case.get("jobfile_parameters_mapping", ""),
+        "test_case_group_name": test_case_group_name,
+        "test_case_identifier": test_case_identifier,
+        "test_case_title": test_case_title_from_metadata,
     }
 
     # Load and render the tracking issue template
@@ -149,7 +154,6 @@ async def create_tracking_issue_for_catalog_pr(
         catalog_branch=catalog_pr.head.ref,
         suggested_project_branch=suggested_branch,
         test_case_title=test_case_title,  # Original title with OS tag for display
-        test_case_title_clean=clean_title,  # Clean title for CLI commands
         os_name=os_name.upper(),
         test_requirement=test_requirement,
     )

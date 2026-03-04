@@ -745,6 +745,48 @@ class TestCreateTrackingIssueForCatalogTestCase:
         body = mock_adapter.create_issue.call_args[1]["body"]
         assert "learn/nxos/add-verify-nxos-interfaces" in body
 
+    @pytest.mark.asyncio
+    async def test_includes_test_plan_metadata_in_body(self) -> None:
+        """Should include test_plan metadata in tracking issue body when present."""
+        mock_adapter = AsyncMock()
+        mock_issue = MagicMock()
+        mock_issue.number = 1
+        mock_issue.html_url = "https://url"
+        mock_adapter.create_issue.return_value = mock_issue
+
+        test_case: dict[str, Any] = {
+            "title": "[NX-OS] Verify Interface Status",
+            "purpose": "Check all interfaces are up",
+            "commands": [{"command": "show interface status"}],
+            "metadata": {
+                "catalog": {"destined": True},
+                "catalog_tracking": {
+                    "pr_number": 101,
+                    "pr_url": "https://github.com/catalog/repo/pull/101",
+                    "pr_branch": "feat/nxos/add-verify-nxos-interface-status",
+                },
+                "test_plan": {
+                    "test_case_group_name": "Verify Interface Status on all NX-OS devices",
+                    "test_case_identifier": "1.0.42.",
+                    "test_case_title": "Verify Interface Status on all NX-OS devices",
+                },
+            },
+        }
+
+        await create_tracking_issue_for_catalog_test_case(
+            test_case,
+            mock_adapter,
+            "https://github.com/catalog/repo",
+        )
+
+        body = mock_adapter.create_issue.call_args[1]["body"]
+        # Verify test_plan metadata is included in the YAML block
+        assert "test_case_group_name" in body
+        assert "Verify Interface Status on all NX-OS devices" in body
+        assert "test_case_identifier" in body
+        assert "1.0.42." in body
+        assert "test_case_title" in body
+
 
 class TestProcessTestRequirements:
     """Tests for process_test_requirements function."""
