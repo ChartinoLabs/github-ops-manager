@@ -53,6 +53,12 @@ github-ops-manager = "github_ops_manager.configuration.cli:typer_app"
 [tool.hatch.build.targets.wheel]
 packages = ["github_ops_manager"]
 
+[tool.hatch.build]
+include = [
+    "github_ops_manager/**/*.py",
+    "github_ops_manager/py.typed",
+]
+
 [tool.uv]
 # uv-specific configuration (if any)
 
