@@ -1,0 +1,721 @@
+"""Unified processing of test requirements for GitHub issues and PRs.
+
+This module provides the core logic for processing test requirements directly
+from test_cases.yaml files, creating GitHub issues and PRs, and writing
+metadata back to the source files. This eliminates the need for issues.yaml.
+"""
+
+from pathlib import Path
+from typing import Any
+
+import jinja2
+import structlog
+
+from github_ops_manager.github.adapter import GitHubKitAdapter
+from github_ops_manager.processing.test_cases_processor import (
+    extract_os_from_robot_content,
+    extract_os_from_robot_filename,
+    load_all_test_cases,
+    normalize_os_to_catalog_dir,
+    requires_catalog_pr_creation,
+    requires_issue_creation,
+    requires_project_pr_creation,
+    save_test_case_metadata,
+    update_test_case_with_issue_metadata,
+    update_test_case_with_pr_metadata,
+    update_test_case_with_project_pr_metadata,
+)
+from github_ops_manager.synchronize.tracking_issues import (
+    compute_project_branch_name,
+    load_tracking_issue_template,
+    strip_os_tag_from_title,
+)
+from github_ops_manager.utils.constants import DEFAULT_MAX_ISSUE_BODY_LENGTH
+from github_ops_manager.utils.templates import construct_jinja2_template_from_file
+from github_ops_manager.utils.truncation import truncate_data_dict_outputs
+
+logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)
+
+
+async def create_issue_for_test_case(
+    test_case: dict[str, Any],
+    github_adapter: GitHubKitAdapter,
+    issue_body: str,
+    labels: list[str] | None = None,
+) -> dict[str, Any] | None:
+    """Create a GitHub issue for a test case and update metadata.
+
+    Args:
+        test_case: Test case dictionary
+        github_adapter: GitHub adapter for API calls
+        issue_body: Rendered issue body content
+        labels: Optional list of labels to apply
+
+    Returns:
+        Created issue data or None on error
+    """
+    title = test_case.get("title")
+    if not title:
+        logger.error("Test case missing title, cannot create issue")
+        return None
+
+    logger.info("Creating issue for test case", title=title)
+
+    try:
+        issue = await github_adapter.create_issue(
+            title=title,
+            body=issue_body,
+            labels=labels,
+        )
+
+        logger.info(
+            "Created issue for test case",
+            title=title,
+            issue_number=issue.number,
+            issue_url=issue.html_url,
+        )
+
+        # Update test case with issue metadata
+        update_test_case_with_issue_metadata(test_case, issue.number, issue.html_url)
+
+        return {
+            "issue": issue,
+            "issue_number": issue.number,
+            "issue_url": issue.html_url,
+        }
+
+    except Exception as e:
+        logger.error("Failed to create issue for test case", title=title, error=str(e))
+        return None
+
+
+def _extract_os_from_catalog_branch(branch: str) -> str | None:
+    """Extract OS name from catalog branch name pattern.
+
+    Catalog branches follow the pattern: feat/{os_name}/add-{stem}
+
+    Args:
+        branch: Catalog branch name (e.g., "feat/nxos/add-verify-nxos-interfaces")
+
+    Returns:
+        OS name (e.g., "nxos") or None if pattern doesn't match
+    """
+    parts = branch.split("/")
+    if len(parts) >= 3 and parts[0] in ("feat", "feature"):
+        return parts[1]
+    return None
+
+
+async def create_tracking_issue_for_catalog_test_case(
+    test_case: dict[str, Any],
+    project_adapter: GitHubKitAdapter,
+    catalog_repo_url: str,
+    labels: list[str] | None = None,
+    catalog_pr_result: dict[str, Any] | None = None,
+) -> dict[str, Any] | None:
+    """Create a split-style tracking issue for a catalog-destined test case.
+
+    Uses the tracking_issue.j2 template to create an issue that references
+    the catalog PR and provides a task checklist for parameter learning.
+
+    This works for both same-run catalog PRs (catalog_pr_result provided)
+    and previous-run catalog PRs (metadata already in test case).
+
+    Args:
+        test_case: Test case dictionary with catalog_tracking metadata
+        project_adapter: GitHub adapter for project repository
+        catalog_repo_url: Full URL to catalog repository
+        labels: Optional list of labels to apply
+        catalog_pr_result: Optional result from create_catalog_pr_for_test_case
+            (provides os_name when catalog PR was created in same run)
+
+    Returns:
+        Created issue data or None on error
+    """
+    title = test_case.get("title")
+    if not title:
+        logger.error("Test case missing title, cannot create tracking issue")
+        return None
+
+    # Get catalog PR metadata from test case
+    catalog_tracking = test_case.get("metadata", {}).get("catalog_tracking", {})
+    catalog_pr_number = catalog_tracking.get("pr_number")
+    catalog_pr_url = catalog_tracking.get("pr_url")
+    catalog_branch = catalog_tracking.get("pr_branch")
+
+    if not catalog_pr_number or not catalog_pr_url or not catalog_branch:
+        logger.error(
+            "Test case missing catalog PR metadata for tracking issue",
+            title=title,
+        )
+        return None
+
+    # Extract OS name: prefer same-run result, fall back to branch parsing
+    os_name = None
+    if catalog_pr_result:
+        os_name = catalog_pr_result.get("os_name")
+    if not os_name:
+        os_name = _extract_os_from_catalog_branch(catalog_branch)
+    if not os_name:
+        logger.error("Could not determine OS name for tracking issue", title=title)
+        return None
+
+    # Construct catalog PR title from known pattern
+    catalog_dir = normalize_os_to_catalog_dir(os_name)
+    catalog_pr_title = f"feat: add {catalog_dir} test - {title}"
+
+    # Use helpers from tracking_issues module
+    clean_title = strip_os_tag_from_title(title)
+    suggested_branch = compute_project_branch_name(catalog_branch)
+
+    # Build test requirement data from test case
+    commands_list = []
+    if "commands" in test_case:
+        for cmd in test_case["commands"]:
+            if isinstance(cmd, dict):
+                commands_list.append(cmd.get("command", ""))
+            else:
+                commands_list.append(str(cmd))
+
+    test_requirement = {
+        "purpose": test_case.get("purpose", ""),
+        "commands": commands_list,
+        "pass_criteria": test_case.get("pass_criteria", ""),
+        "sample_parameters": test_case.get("jobfile_parameters", ""),
+        "parameters_to_parsed_data_mapping": test_case.get("jobfile_parameters_mapping", ""),
+    }
+
+    # Extract test_plan metadata if present for inclusion in tracking issue
+    test_plan = test_case.get("metadata", {}).get("test_plan", {})
+    if test_plan:
+        test_requirement["test_case_group_name"] = test_plan.get("test_case_group_name", "")
+        test_requirement["test_case_identifier"] = test_plan.get("test_case_identifier", "")
+        test_requirement["test_case_title"] = test_plan.get("test_case_title", "")
+
+    # Load and render the tracking issue template
+    template = load_tracking_issue_template()
+    issue_body = template.render(
+        catalog_pr_title=catalog_pr_title,
+        catalog_pr_url=catalog_pr_url,
+        catalog_pr_number=catalog_pr_number,
+        catalog_branch=catalog_branch,
+        suggested_project_branch=suggested_branch,
+        test_case_title=title,
+        test_case_title_clean=clean_title,
+        os_name=os_name.upper(),
+        test_requirement=test_requirement,
+    )
+
+    issue_title = f"Review Catalog PR and Learn Parameters: {title}"
+
+    logger.info(
+        "Creating tracking issue for catalog-destined test case",
+        title=title,
+        catalog_pr_number=catalog_pr_number,
+    )
+
+    try:
+        issue = await project_adapter.create_issue(
+            title=issue_title,
+            body=issue_body,
+            labels=labels,
+        )
+
+        logger.info(
+            "Created tracking issue for catalog-destined test case",
+            title=title,
+            issue_number=issue.number,
+            issue_url=issue.html_url,
+            catalog_pr_number=catalog_pr_number,
+        )
+
+        # Update test case with issue metadata
+        update_test_case_with_issue_metadata(test_case, issue.number, issue.html_url)
+
+        return {
+            "issue": issue,
+            "issue_number": issue.number,
+            "issue_url": issue.html_url,
+        }
+
+    except Exception as e:
+        logger.error(
+            "Failed to create tracking issue for catalog-destined test case",
+            title=title,
+            error=str(e),
+        )
+        return None
+
+
+async def create_project_pr_for_test_case(
+    test_case: dict[str, Any],
+    github_adapter: GitHubKitAdapter,
+    base_directory: Path,
+    default_branch: str,
+    repo_url: str,
+) -> dict[str, Any] | None:
+    """Create a project PR for a test case and update metadata.
+
+    Args:
+        test_case: Test case dictionary
+        github_adapter: GitHub adapter for API calls
+        base_directory: Base directory for resolving file paths
+        default_branch: Default branch to base PR on
+        repo_url: Full URL to the repository
+
+    Returns:
+        Created PR data or None on error
+    """
+    title = test_case.get("title")
+    script_path = test_case.get("generated_script_path")
+
+    if not title or not script_path:
+        logger.error("Test case missing title or generated_script_path")
+        return None
+
+    # Build file path
+    robot_file_path = base_directory / script_path
+    if not robot_file_path.exists():
+        logger.error("Robot file not found", file=str(robot_file_path), title=title)
+        return None
+
+    # Read robot file content
+    robot_content = robot_file_path.read_text(encoding="utf-8")
+
+    # Create branch name
+    branch_name = f"feature/{robot_file_path.stem}".lower().replace("_", "-")
+
+    logger.info("Creating project PR for test case", title=title, branch=branch_name)
+
+    try:
+        # Check if branch exists
+        if await github_adapter.branch_exists(branch_name):
+            logger.info("Branch already exists, skipping PR creation", branch=branch_name, title=title)
+            return None
+
+        # Create branch
+        await github_adapter.create_branch(branch_name, default_branch)
+
+        # Commit file to branch
+        commit_message = f"feat: add test automation - {title}"
+        files_to_commit = [(script_path, robot_content)]
+
+        await github_adapter.commit_files_to_branch(branch_name, files_to_commit, commit_message)
+
+        # Create PR
+        pr_title = f"GenAI, Review: {title}"
+
+        # Build PR body with issue reference if available
+        project_tracking = test_case.get("metadata", {}).get("project_tracking", {})
+        issue_number = project_tracking.get("issue_number")
+        issue_url = project_tracking.get("issue_url")
+
+        if issue_number:
+            pr_body = f"""**Quicksilver**: Automatically generated Pull Request for issue #{issue_number}.
+
+**Test Case:** {title}
+**Script:** `{script_path}`
+**Tracking Issue:** {issue_url or f"#{issue_number}"}
+
+This PR adds test automation generated by tac-quicksilver.
+
+Closes #{issue_number}
+
+🤖 Automatically generated test automation"""
+        else:
+            pr_body = f"""**Quicksilver**: Automatically generated Pull Request.
+
+**Test Case:** {title}
+**Script:** `{script_path}`
+
+This PR adds test automation generated by tac-quicksilver.
+
+🤖 Automatically generated test automation"""
+
+        new_pr = await github_adapter.create_pull_request(
+            title=pr_title,
+            head=branch_name,
+            base=default_branch,
+            body=pr_body,
+        )
+
+        logger.info(
+            "Created project PR for test case",
+            title=title,
+            pr_number=new_pr.number,
+            pr_url=new_pr.html_url,
+        )
+
+        # Update test case with PR metadata
+        update_test_case_with_project_pr_metadata(
+            test_case,
+            new_pr.number,
+            new_pr.html_url,
+            branch_name,
+            repo_url,
+        )
+
+        return {
+            "pr": new_pr,
+            "pr_number": new_pr.number,
+            "pr_url": new_pr.html_url,
+            "branch_name": branch_name,
+        }
+
+    except Exception as e:
+        logger.error("Failed to create project PR for test case", title=title, error=str(e))
+        return None
+
+
+async def create_catalog_pr_for_test_case(
+    test_case: dict[str, Any],
+    github_adapter: GitHubKitAdapter,
+    base_directory: Path,
+    default_branch: str,
+    catalog_repo_url: str,
+    labels: list[str] | None = None,
+) -> dict[str, Any] | None:
+    """Create a catalog PR for a test case and update metadata.
+
+    Args:
+        test_case: Test case dictionary
+        github_adapter: GitHub adapter for catalog repository
+        base_directory: Base directory for resolving file paths
+        default_branch: Default branch to base PR on
+        catalog_repo_url: Full URL to catalog repository
+        labels: Optional list of labels to apply to the PR
+
+    Returns:
+        Created PR data or None on error
+    """
+    title = test_case.get("title")
+    script_path = test_case.get("generated_script_path")
+
+    if not title or not script_path:
+        logger.error("Test case missing title or generated_script_path")
+        return None
+
+    # Build file path
+    robot_file_path = base_directory / script_path
+    if not robot_file_path.exists():
+        logger.error("Robot file not found", file=str(robot_file_path), title=title)
+        return None
+
+    # Read robot file content
+    robot_content = robot_file_path.read_text(encoding="utf-8")
+
+    # Extract OS from Test Tags or filename
+    os_name = extract_os_from_robot_content(robot_content)
+    if not os_name:
+        os_name = extract_os_from_robot_filename(robot_file_path.name)
+
+    if not os_name:
+        logger.error("Could not extract OS from robot file", file=str(robot_file_path), title=title)
+        return None
+
+    # Transform path for catalog
+    catalog_dir = normalize_os_to_catalog_dir(os_name)
+    catalog_path = f"catalog/{catalog_dir}/{robot_file_path.name}"
+
+    # Create branch name
+    branch_name = f"feat/{os_name}/add-{robot_file_path.stem}".lower().replace("_", "-")
+
+    logger.info("Creating catalog PR for test case", title=title, branch=branch_name, catalog_path=catalog_path)
+
+    try:
+        # Check if branch exists
+        if await github_adapter.branch_exists(branch_name):
+            logger.info("Branch already exists, skipping PR creation", branch=branch_name, title=title)
+            return None
+
+        # Create branch
+        await github_adapter.create_branch(branch_name, default_branch)
+
+        # Commit file to branch
+        commit_message = f"feat: add {catalog_dir} test - {title}"
+        files_to_commit = [(catalog_path, robot_content)]
+
+        await github_adapter.commit_files_to_branch(branch_name, files_to_commit, commit_message)
+
+        # Create PR
+        pr_title = f"feat: add {catalog_dir} test - {title}"
+        pr_body = f"""Catalog contribution for test automation.
+
+**Test Case:** {title}
+**Operating System:** {os_name.upper()}
+**Script:** `{catalog_path}`
+
+This PR adds test automation generated by tac-quicksilver to the catalog for reuse across projects.
+
+🤖 Automatically generated catalog contribution"""
+
+        new_pr = await github_adapter.create_pull_request(
+            title=pr_title,
+            head=branch_name,
+            base=default_branch,
+            body=pr_body,
+        )
+
+        logger.info(
+            "Created catalog PR for test case",
+            title=title,
+            pr_number=new_pr.number,
+            pr_url=new_pr.html_url,
+        )
+
+        # Apply labels to PR (GitHub treats PRs as issues for labels)
+        if labels:
+            await github_adapter.set_labels_on_issue(new_pr.number, labels)
+
+        # Update test case with catalog PR metadata
+        update_test_case_with_pr_metadata(test_case, new_pr, catalog_repo_url)
+
+        return {
+            "pr": new_pr,
+            "pr_number": new_pr.number,
+            "pr_url": new_pr.html_url,
+            "branch_name": branch_name,
+            "catalog_path": catalog_path,
+            "os_name": os_name,
+        }
+
+    except Exception as e:
+        logger.error("Failed to create catalog PR for test case", title=title, error=str(e))
+        return None
+
+
+def _convert_to_dict(obj: Any) -> Any:
+    """Recursively convert ruamel.yaml CommentedMap/CommentedSeq to regular dict/list.
+
+    This is needed because Jinja2 templates use attribute access (obj.attr) which
+    doesn't work with CommentedMap objects from ruamel.yaml.
+
+    Args:
+        obj: Object to convert (may be CommentedMap, CommentedSeq, or other)
+
+    Returns:
+        Converted object with all nested CommentedMap/CommentedSeq converted
+    """
+    if hasattr(obj, "items"):
+        # Dict-like object (including CommentedMap)
+        return {k: _convert_to_dict(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        # List-like object (including CommentedSeq)
+        return [_convert_to_dict(item) for item in obj]
+    else:
+        return obj
+
+
+def render_issue_body_for_test_case(
+    test_case: dict[str, Any],
+    template: jinja2.Template,
+    max_body_length: int | None = None,
+) -> str:
+    """Render issue body for a test case using the template.
+
+    Args:
+        test_case: Test case dictionary with all fields
+        template: Jinja2 template for issue body
+        max_body_length: Optional max length for issue body (truncates outputs if needed)
+
+    Returns:
+        Rendered issue body string
+    """
+    # Build render context from test case
+    # Transform test case format to match expected template format
+    # Convert commands to regular dicts for Jinja2 attribute access
+    commands = test_case.get("commands", [])
+    commands_as_dicts = _convert_to_dict(commands)
+
+    render_context = {
+        "purpose": test_case.get("purpose", ""),
+        "pass_criteria": test_case.get("pass_criteria", ""),
+        "jobfile_parameters": test_case.get("jobfile_parameters", ""),
+        "jobfile_parameters_mapping": test_case.get("jobfile_parameters_mapping", ""),
+        "commands": commands_as_dicts,
+    }
+
+    # Apply truncation to command outputs if max_body_length is specified
+    if max_body_length is not None:
+        render_context = truncate_data_dict_outputs(render_context, max_body_length)
+
+    try:
+        return template.render(**render_context)
+    except jinja2.UndefinedError as exc:
+        logger.error("Failed to render issue body", title=test_case.get("title"), error=str(exc))
+        raise
+
+
+async def process_test_requirements(
+    test_cases_dir: Path,
+    base_directory: Path,
+    project_adapter: GitHubKitAdapter,
+    project_default_branch: str,
+    project_repo_url: str,
+    catalog_adapter: GitHubKitAdapter | None = None,
+    catalog_default_branch: str | None = None,
+    catalog_repo_url: str | None = None,
+    issue_template_path: Path | None = None,
+    issue_labels: list[str] | None = None,
+    max_body_length: int = DEFAULT_MAX_ISSUE_BODY_LENGTH,
+) -> dict[str, Any]:
+    """Process all test requirements: create issues and PRs as needed.
+
+    This is the main entry point for unified test requirement processing.
+    It eliminates the need for issues.yaml by working directly with test_cases.yaml.
+
+    Args:
+        test_cases_dir: Directory containing test_cases.yaml files
+        base_directory: Base directory for resolving script file paths
+        project_adapter: GitHub adapter for project repository
+        project_default_branch: Default branch for project repository
+        project_repo_url: Full URL to project repository
+        catalog_adapter: Optional GitHub adapter for catalog repository
+        catalog_default_branch: Optional default branch for catalog repository
+        catalog_repo_url: Optional full URL to catalog repository
+        issue_template_path: Optional path to Jinja2 template for issue bodies
+        issue_labels: Optional list of labels to apply to issues
+        max_body_length: Maximum issue body length (truncates outputs if exceeded)
+
+    Returns:
+        Summary dict with counts and results
+    """
+    logger.info(
+        "Starting test requirements processing",
+        test_cases_dir=str(test_cases_dir),
+        base_directory=str(base_directory),
+    )
+
+    # Load issue body template if provided
+    template = None
+    if issue_template_path:
+        try:
+            template = construct_jinja2_template_from_file(issue_template_path)
+            logger.info("Loaded issue template", template_path=str(issue_template_path))
+        except Exception as e:
+            logger.error("Failed to load issue template", template_path=str(issue_template_path), error=str(e))
+            raise
+
+    # Load all test cases
+    test_cases = load_all_test_cases(test_cases_dir)
+    logger.info("Loaded test cases", count=len(test_cases))
+
+    # Track results
+    results = {
+        "total_test_cases": len(test_cases),
+        "issues_created": 0,
+        "project_prs_created": 0,
+        "catalog_prs_created": 0,
+        "errors": [],
+    }
+
+    for test_case in test_cases:
+        title = test_case.get("title", "Unknown")
+        logger.info("Processing test case", title=title)
+
+        # Track catalog PR result for use during issue creation (same-run)
+        catalog_pr_result = None
+
+        # Create catalog PR first (if needed) so that catalog-destined test
+        # cases have catalog_tracking metadata before issue creation runs.
+        # This allows the project issue to reference the catalog PR.
+        if requires_catalog_pr_creation(test_case):
+            if not catalog_adapter or not catalog_default_branch or not catalog_repo_url:
+                logger.warning(
+                    "Catalog PR needed but catalog configuration not provided",
+                    title=title,
+                )
+                results["errors"].append(f"Catalog PR needed for {title} but catalog not configured")
+                continue
+
+            # Build catalog PR labels: start from test case / default labels,
+            # remove issue-specific labels, and add "quicksilver"
+            catalog_pr_labels = list(test_case.get("labels", issue_labels) or [])
+            if "script-already-created" in catalog_pr_labels:
+                catalog_pr_labels.remove("script-already-created")
+            if "quicksilver" not in catalog_pr_labels:
+                catalog_pr_labels.append("quicksilver")
+
+            catalog_pr_result = await create_catalog_pr_for_test_case(
+                test_case,
+                catalog_adapter,
+                base_directory,
+                catalog_default_branch,
+                catalog_repo_url,
+                labels=catalog_pr_labels,
+            )
+
+            if catalog_pr_result:
+                results["catalog_prs_created"] += 1
+                # Save metadata back to file
+                save_test_case_metadata(test_case)
+
+        # Check if issue needs to be created. For catalog-destined test cases,
+        # this will only proceed if a catalog PR already exists (either created
+        # above or in a previous run).
+        if requires_issue_creation(test_case):
+            is_catalog = test_case.get("metadata", {}).get("catalog", {}).get("destined", False)
+            labels = test_case.get("labels", issue_labels)
+
+            if is_catalog:
+                # Use split-style tracking issue for catalog-destined test cases.
+                # This renders tracking_issue.j2 with catalog PR reference and
+                # task checklist for parameter learning workflow.
+                issue_result = await create_tracking_issue_for_catalog_test_case(
+                    test_case,
+                    project_adapter,
+                    catalog_repo_url or "",
+                    labels=labels,
+                    catalog_pr_result=catalog_pr_result,
+                )
+            else:
+                # Use collapsed-style issue for non-catalog test cases.
+                # This renders the issue template with full test requirement details.
+                if template:
+                    try:
+                        issue_body = render_issue_body_for_test_case(test_case, template, max_body_length=max_body_length)
+                    except Exception as e:
+                        logger.error("Failed to render issue body", title=title, error=str(e))
+                        results["errors"].append(f"Failed to render issue body for {title}: {e}")
+                        continue
+                else:
+                    # Simple default body
+                    issue_body = f"Test requirement: {title}\n\n{test_case.get('purpose', '')}"
+
+                issue_result = await create_issue_for_test_case(
+                    test_case,
+                    project_adapter,
+                    issue_body,
+                    labels=labels,
+                )
+
+            if issue_result:
+                results["issues_created"] += 1
+                # Save metadata back to file
+                save_test_case_metadata(test_case)
+
+        # Check if project PR needs to be created
+        if requires_project_pr_creation(test_case):
+            pr_result = await create_project_pr_for_test_case(
+                test_case,
+                project_adapter,
+                base_directory,
+                project_default_branch,
+                project_repo_url,
+            )
+
+            if pr_result:
+                results["project_prs_created"] += 1
+                # Save metadata back to file
+                save_test_case_metadata(test_case)
+
+    logger.info(
+        "Completed test requirements processing",
+        total=results["total_test_cases"],
+        issues_created=results["issues_created"],
+        project_prs_created=results["project_prs_created"],
+        catalog_prs_created=results["catalog_prs_created"],
+        errors=len(results["errors"]),
+    )
+
+    return results

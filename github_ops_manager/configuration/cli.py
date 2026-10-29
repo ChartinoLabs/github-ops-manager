@@ -17,8 +17,10 @@ from github_ops_manager.github.adapter import GitHubKitAdapter
 from github_ops_manager.processing.yaml_processor import YAMLProcessor
 from github_ops_manager.schemas.default_issue import IssueModel, IssuesYAMLModel, PullRequestModel
 from github_ops_manager.synchronize.driver import run_process_issues_workflow
+from github_ops_manager.utils.constants import DEFAULT_MAX_ISSUE_BODY_LENGTH
 from github_ops_manager.utils.tac import find_issue_with_title
 from github_ops_manager.utils.templates import construct_jinja2_template_from_file, render_template_with_model
+from github_ops_manager.utils.truncation import truncate_test_case_outputs
 from github_ops_manager.utils.yaml import dump_yaml_to_file, load_test_case_definitions_from_directory, load_yaml_file
 
 load_dotenv()
@@ -75,7 +77,11 @@ def tac_sync_issues_cli(
 
     # Ensure that the issue body Jinja2 template for Testing as Code issues
     # can be constructed.
-    template = construct_jinja2_template_from_file(Path("github_ops_manager/templates/tac_issues_body.j2"))
+    template = construct_jinja2_template_from_file(Path(__file__).parent.parent / "templates" / "tac_issues_body.j2")
+
+    # Get max body length from environment variable or use default
+    max_body_length = int(os.getenv("GITHUB_MAX_ISSUE_BODY_LENGTH", str(DEFAULT_MAX_ISSUE_BODY_LENGTH)))
+    typer.echo(f"Using max issue body length: {max_body_length}")
 
     # Iterate through the test case definitions and ensure matching issues
     # exist in the YAML file.
@@ -100,10 +106,13 @@ def tac_sync_issues_cli(
             # script will have a control label called "script-already-created".
             # Additionally, a field named "generated_script_path" will be
             # populated with the path to the created test automation script.
+            #
+            # Truncate outputs if they would exceed the max body length
+            truncated_test_case = truncate_test_case_outputs(test_case_definition, max_body_length)
             new_issue = IssueModel(
                 title=test_case_definition.title,
                 body=render_template_with_model(
-                    model=test_case_definition,
+                    model=truncated_test_case,
                     template=template,
                 ),
                 labels=test_case_definition.labels,
@@ -116,15 +125,18 @@ def tac_sync_issues_cli(
                     f"path of '{test_case_definition.generated_script_path}' - "
                     "creating a Pull Request"
                 )
+                script_path = test_automation_scripts_directory / test_case_definition.generated_script_path
                 new_issue.pull_request = PullRequestModel(
                     title=f"GenAI, Review: {test_case_definition.title}",
-                    files=[test_case_definition.generated_script_path],
+                    files=[str(script_path)],
                 )
             desired_issues_yaml_model.issues.append(new_issue)
         else:
             # Update the existing issue based upon the test case definition.
+            # Truncate outputs if they would exceed the max body length
+            truncated_test_case = truncate_test_case_outputs(test_case_definition, max_body_length)
             existing_issue.body = render_template_with_model(
-                model=test_case_definition,
+                model=truncated_test_case,
                 template=template,
             )
             existing_issue.labels = test_case_definition.labels
@@ -196,6 +208,222 @@ def repo_callback(
 repo_app.callback()(repo_callback)
 
 
+# --- New unified test requirements processing command ---
+@repo_app.command(name="process-test-requirements")
+def process_test_requirements_cli(
+    ctx: typer.Context,
+    test_cases_dir: Annotated[
+        Path,
+        Argument(
+            envvar="TEST_CASES_DIR",
+            help="Directory containing test_cases.yaml files.",
+        ),
+    ],
+    base_directory: Annotated[
+        Path,
+        Option(
+            envvar="BASE_DIRECTORY",
+            help="Base directory for resolving script file paths. Defaults to parent of test_cases_dir.",
+        ),
+    ] = None,
+    issue_template: Annotated[
+        Path | None,
+        Option(
+            envvar="ISSUE_TEMPLATE",
+            help="Path to Jinja2 template for issue bodies.",
+        ),
+    ] = None,
+    issue_labels: Annotated[
+        str | None,
+        Option(
+            envvar="ISSUE_LABELS",
+            help="Comma-separated list of labels to apply to issues.",
+        ),
+    ] = None,
+    catalog_repo: Annotated[
+        str,
+        Option(
+            envvar="CATALOG_REPO",
+            help="Catalog repository name (owner/repo) for catalog-destined test cases.",
+        ),
+    ] = "Testing-as-Code/tac-catalog",
+    # ⚠️ DEPRECATED: Migration option - remove post-migration
+    issues_yaml: Annotated[
+        Path | None,
+        Option(
+            envvar="ISSUES_YAML",
+            help="[DEPRECATED] Path to legacy issues.yaml file for migration. "
+            "If provided, migrates existing issue/PR metadata to test_cases.yaml before processing.",
+        ),
+    ] = None,
+) -> None:
+    """Process test requirements directly from test_cases.yaml files.
+
+    This command eliminates the need for issues.yaml by:
+    - Reading test requirements directly from test_cases.yaml files
+    - Creating GitHub issues for test cases that don't have issue metadata
+    - Creating PRs (project or catalog) for test cases with generated scripts
+    - Writing metadata back to test_cases.yaml files
+
+    For each test case:
+    - If metadata.project_tracking.issue_number is missing, creates an issue
+    - If generated_script_path exists and PR metadata is missing:
+      - Non-catalog (metadata.catalog.destined != true): creates PR in project repo
+      - Catalog-destined (metadata.catalog.destined == true): creates PR in catalog repo
+
+    Metadata structure written:
+    - metadata.project_tracking.{issue_number, issue_url, pr_number, pr_url, pr_branch, git_url}
+    - metadata.catalog_tracking.{pr_number, pr_url, pr_branch, git_url}
+
+    MIGRATION: If --issues-yaml is provided, existing metadata from issues.yaml
+    will be migrated to test_cases.yaml before normal processing begins.
+    """
+    from github_ops_manager.synchronize.test_requirements import process_test_requirements
+
+    repo: str = ctx.obj["repo"]
+    github_api_url: str = ctx.obj["github_api_url"]
+    github_pat_token: str = ctx.obj["github_pat_token"]
+    github_app_id: int = ctx.obj["github_app_id"]
+    github_app_private_key_path: Path | None = ctx.obj["github_app_private_key_path"]
+    github_app_installation_id: int = ctx.obj["github_app_installation_id"]
+    github_auth_type = ctx.obj["github_auth_type"]
+
+    # Validate test cases directory
+    if not test_cases_dir.exists():
+        typer.echo(f"Test cases directory not found: {test_cases_dir.absolute()}", err=True)
+        raise typer.Exit(1)
+
+    if not test_cases_dir.is_dir():
+        typer.echo(f"Test cases path is not a directory: {test_cases_dir.absolute()}", err=True)
+        raise typer.Exit(1)
+
+    # Default base directory to parent of test_cases_dir
+    if base_directory is None:
+        base_directory = test_cases_dir.parent
+
+    typer.echo(f"Processing test requirements from: {test_cases_dir.absolute()}")
+    typer.echo(f"Base directory for scripts: {base_directory.absolute()}")
+
+    # Parse labels
+    parsed_labels = None
+    if issue_labels:
+        parsed_labels = [label.strip() for label in issue_labels.split(",") if label.strip()]
+
+    # Use default template if not specified
+    if issue_template is None:
+        issue_template = Path(__file__).parent.parent / "templates" / "tac_issues_body.j2"
+        if issue_template.exists():
+            typer.echo(f"Using default issue template: {issue_template}")
+        else:
+            issue_template = None
+            typer.echo("No issue template specified, using simple default body")
+
+    # Build repo URL
+    if "api.github.com" in github_api_url:
+        base_url = "https://github.com"
+    else:
+        base_url = github_api_url.replace("/api/v3", "").replace("/api", "").rstrip("/")
+    project_repo_url = f"{base_url}/{repo}"
+    catalog_repo_url = f"{base_url}/{catalog_repo}"
+
+    async def run_processing() -> dict:
+        # Create project adapter
+        project_adapter = await GitHubKitAdapter.create(
+            repo=repo,
+            github_auth_type=github_auth_type,
+            github_pat_token=github_pat_token,
+            github_app_id=github_app_id,
+            github_app_private_key_path=github_app_private_key_path,
+            github_app_installation_id=github_app_installation_id,
+            github_api_url=github_api_url,
+        )
+
+        # Get project default branch
+        project_repo_info = await project_adapter.get_repository()
+        project_default_branch = project_repo_info.default_branch
+
+        typer.echo(f"Project repository: {repo} (default branch: {project_default_branch})")
+
+        # ═══════════════════════════════════════════════════════════════════════════
+        # ⚠️ DEPRECATED: issues.yaml migration - TODO: Remove this block post-migration
+        # ═══════════════════════════════════════════════════════════════════════════
+        if issues_yaml is not None:
+            from github_ops_manager.synchronize.issues_yaml_migration import run_issues_yaml_migration
+
+            typer.echo("\n--- Running issues.yaml Migration (DEPRECATED) ---")
+            typer.echo(f"Migrating from: {issues_yaml.absolute()}")
+
+            migration_results = await run_issues_yaml_migration(
+                issues_yaml_path=issues_yaml,
+                test_cases_dir=test_cases_dir,
+                repo_url=project_repo_url,
+                github_adapter=project_adapter,
+            )
+
+            typer.echo("Migration complete:")
+            typer.echo(f"  Total issues in issues.yaml: {migration_results['total_issues']}")
+            typer.echo(f"  Already migrated: {migration_results['already_migrated']}")
+            typer.echo(f"  Newly migrated: {migration_results['newly_migrated']}")
+            typer.echo(f"  Skipped (no match): {migration_results['skipped_no_match']}")
+            typer.echo(f"  Skipped (not in GitHub): {migration_results['skipped_not_in_github']}")
+
+            if migration_results["errors"]:
+                typer.echo(f"\nMigration warnings ({len(migration_results['errors'])}):", err=True)
+                for error in migration_results["errors"]:
+                    typer.echo(f"  - {error}", err=True)
+
+            typer.echo("")  # Blank line before main processing
+        # ═══════════════════════════════════════════════════════════════════════════
+
+        # Create catalog adapter
+        catalog_adapter = await GitHubKitAdapter.create(
+            repo=catalog_repo,
+            github_auth_type=github_auth_type,
+            github_pat_token=github_pat_token,
+            github_app_id=github_app_id,
+            github_app_private_key_path=github_app_private_key_path,
+            github_app_installation_id=github_app_installation_id,
+            github_api_url=github_api_url,
+        )
+
+        # Get catalog default branch
+        catalog_repo_info = await catalog_adapter.get_repository()
+        catalog_default_branch = catalog_repo_info.default_branch
+
+        typer.echo(f"Catalog repository: {catalog_repo} (default branch: {catalog_default_branch})")
+
+        # Process test requirements
+        return await process_test_requirements(
+            test_cases_dir=test_cases_dir,
+            base_directory=base_directory,
+            project_adapter=project_adapter,
+            project_default_branch=project_default_branch,
+            project_repo_url=project_repo_url,
+            catalog_adapter=catalog_adapter,
+            catalog_default_branch=catalog_default_branch,
+            catalog_repo_url=catalog_repo_url,
+            issue_template_path=issue_template,
+            issue_labels=parsed_labels,
+        )
+
+    results = asyncio.run(run_processing())
+
+    # Report results
+    typer.echo("\n--- Processing Results ---")
+    typer.echo(f"Total test cases: {results['total_test_cases']}")
+    typer.echo(f"Issues created: {results['issues_created']}")
+    typer.echo(f"Project PRs created: {results['project_prs_created']}")
+    typer.echo(f"Catalog PRs created: {results['catalog_prs_created']}")
+
+    if results["errors"]:
+        typer.echo(f"\nErrors ({len(results['errors'])}):", err=True)
+        for error in results["errors"]:
+            typer.echo(f"  - {error}", err=True)
+        raise typer.Exit(1)
+
+    typer.echo("\nProcessing completed successfully!")
+
+
 # --- Move process-issues under repo_app ---
 @repo_app.command(name="process-issues")
 def process_issues_cli(
@@ -204,8 +432,43 @@ def process_issues_cli(
     create_prs: Annotated[bool, Option(envvar="CREATE_PRS", help="Create PRs for issues.")] = False,
     debug: Annotated[bool, Option(envvar="DEBUG", help="Enable debug mode.")] = False,
     testing_as_code_workflow: Annotated[bool, Option(envvar="TESTING_AS_CODE_WORKFLOW", help="Enable Testing as Code workflow.")] = False,
+    catalog_repo: Annotated[
+        str,
+        Option(
+            envvar="CATALOG_REPO",
+            help="Catalog repository name (owner/repo) for catalog-destined test cases. Used when test cases have catalog_destined=true.",
+        ),
+    ] = "Testing-as-Code/tac-catalog",
+    test_cases_dir: Annotated[
+        Path,
+        Option(
+            envvar="TEST_CASES_DIR",
+            help="Directory containing test_cases.yaml files for catalog PR metadata writeback. Used when test cases have catalog_destined=true.",
+        ),
+    ] = Path("workspace/test_cases/"),
+    create_tracking_issues: Annotated[
+        bool,
+        Option(
+            envvar="CREATE_TRACKING_ISSUES",
+            help="Create tracking issues in project repo for catalog PRs and parameter learning tasks.",
+        ),
+    ] = False,
+    tracking_issue_labels: Annotated[
+        str | None,
+        Option(
+            envvar="TRACKING_ISSUE_LABELS",
+            help="Comma-separated list of labels to apply to tracking issues (e.g., 'parameter-learning,catalog-pr').",
+        ),
+    ] = None,
 ) -> None:
-    """Processes issues in a GitHub repository."""
+    """Processes issues in a GitHub repository.
+
+    Automatically detects catalog-destined test cases (catalog_destined=true) and creates
+    PRs against the catalog repository with proper directory structure and metadata writeback.
+    Non-catalog test cases are processed normally against the project repository.
+
+    Optionally creates tracking issues for catalog PRs to track parameter learning tasks.
+    """
     repo: str = ctx.obj["repo"]
     github_api_url: str = ctx.obj["github_api_url"]
     github_pat_token: str = ctx.obj["github_pat_token"]
@@ -216,6 +479,11 @@ def process_issues_cli(
 
     if testing_as_code_workflow is True:
         typer.echo("Testing as Code workflow is enabled - any Pull Requests created will have an augmented body")
+
+    # Parse tracking issue labels from comma-separated string
+    parsed_labels = None
+    if tracking_issue_labels:
+        parsed_labels = [label.strip() for label in tracking_issue_labels.split(",") if label.strip()]
 
     # Run the workflow
     result = asyncio.run(
@@ -229,6 +497,10 @@ def process_issues_cli(
             github_api_url=github_api_url,
             yaml_path=yaml_path,
             testing_as_code_workflow=testing_as_code_workflow,
+            catalog_repo=catalog_repo,
+            test_cases_dir=test_cases_dir,
+            create_tracking_issues=create_tracking_issues,
+            tracking_issue_labels=parsed_labels,
         )
     )
     if result.errors:
@@ -360,6 +632,10 @@ def sync_new_files_cli(
     if not new_files:
         typer.echo("No new (untracked) files found.")
         return
+
+    typer.echo(f"{len(new_files)} new files found")
+    for file in new_files:
+        typer.echo(f"  - {file}")
 
     # 2. Load and validate the issues file
     processor = YAMLProcessor()

@@ -23,3 +23,24 @@ DEFAULT_RELEASE_NOTES_PATH = "docs/release-notes.md"
 
 DEFAULT_RELEASE_NOTES_HEADER = "# Release Notes\n\nThis document tracks the new features, enhancements, and bug fixes for each release."
 """Default header expected in release notes file."""
+
+# Issue Body Truncation Constants
+# -------------------------------
+
+DEFAULT_MAX_ISSUE_BODY_LENGTH = 60000
+"""Default maximum length for issue bodies (leaves margin for GitHub's 65,536 limit)."""
+
+GITHUB_MAX_ISSUE_BODY_LENGTH = 65536
+"""GitHub's actual maximum issue body length."""
+
+TRUNCATION_SUFFIX = "\n... [truncated - {remaining} characters removed]"
+"""Suffix template appended to truncated content. Use .format(remaining=N) to fill in count."""
+
+TEMPLATE_OVERHEAD_PER_COMMAND = 500
+"""Estimated character overhead per command in the TAC issue template (markdown, code fences)."""
+
+BASE_TEMPLATE_OVERHEAD = 2000
+"""Estimated base overhead for non-command template content (headers, pass criteria, etc)."""
+
+MIN_OUTPUT_LENGTH = 500
+"""Minimum characters to preserve in truncated output fields for readability."""

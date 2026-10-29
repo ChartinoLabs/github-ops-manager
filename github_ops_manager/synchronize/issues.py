@@ -1,5 +1,6 @@
 """Contains synchronization logic for GitHub issues."""
 
+import os
 import time
 
 import jinja2
@@ -11,7 +12,9 @@ from github_ops_manager.schemas.default_issue import IssueModel, IssuesYAMLModel
 from github_ops_manager.synchronize.models import SyncDecision
 from github_ops_manager.synchronize.results import AllIssueSynchronizationResults, IssueSynchronizationResult
 from github_ops_manager.synchronize.utils import compare_github_field, compare_label_sets
+from github_ops_manager.utils.constants import DEFAULT_MAX_ISSUE_BODY_LENGTH
 from github_ops_manager.utils.templates import construct_jinja2_template_from_file
+from github_ops_manager.utils.truncation import truncate_data_dict_outputs
 
 logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)
 
@@ -140,8 +143,15 @@ async def render_issue_bodies(issues_yaml_model: IssuesYAMLModel) -> IssuesYAMLM
         logger.error("Encountered a syntax error with the provided issue template", issue_template=issues_yaml_model.issue_template, error=str(exc))
         raise
 
+    # Get max body length from environment variable or use default
+    max_body_length = int(os.getenv("GITHUB_MAX_ISSUE_BODY_LENGTH", str(DEFAULT_MAX_ISSUE_BODY_LENGTH)))
+
     for issue in issues_yaml_model.issues:
         if issue.data is not None:
+            # Truncate command outputs if present to fit within GitHub's body limit
+            if "commands" in issue.data:
+                issue.data = truncate_data_dict_outputs(issue.data, max_body_length)
+
             # Render with all issue fields available
             render_context = issue.model_dump()
             try:

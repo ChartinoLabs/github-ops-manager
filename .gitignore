@@ -34,6 +34,9 @@ ENV/
 htmlcov/
 .coverage.*
 
+# Logs
+logs/
+
 # Documentation
 site/
 

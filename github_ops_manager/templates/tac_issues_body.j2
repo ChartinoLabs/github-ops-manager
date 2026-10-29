@@ -5,46 +5,46 @@
 {% for command_data in commands %}
 Sample output of `{{ command_data.command }}`:
 
-{% if command_data.parser_used != "YamlPathParse" %}
+{% if command_data.parser_used|default(none) != "YamlPathParse" %}
 ```cli
-{{ command_data.command_output }}
+{{ command_data.command_output|default('') }}
 ```
 {% endif %}
-{% if command_data.parser_used=="Genie"%}
+{% if command_data.parser_used|default(none) == "Genie" %}
 
 A Genie Parser exists for this show command, and results in data like so:
 You MUST use a Genie Parser for this `{{ command_data.command }}` command. Pay attention to the Parsing Requirements.
 
 ```json
-{{ command_data.parsed_output }}
+{{ command_data.parsed_output|default('') }}
 ```
 
 {% endif %}
-{%if command_data.parser_used=="YamlPathParse"%}
+{% if command_data.parser_used|default(none) == "YamlPathParse" %}
 The data for the command or API call `{{ command_data.command }}` is already in a structured and valid YAML or JSON format, which means we can use Robot's "YamlPath Parse" [keyword](https://github.com/wwkimball/yamlpath). The data can be accessed using the following schema (which is the same as the raw output):
 
 You MUST use YamlPath Parse keyword for this `{{ command_data.command }}` command or API call. Pay attention to the Parsing Requirements.
 
 ```yaml
-{{ command_data.parsed_output }}
+{{ command_data.parsed_output|default('') }}
 ```
 
 {% endif %}
-{% if command_data.parser_used=="NXOSJSON"%}
+{% if command_data.parser_used|default(none) == "NXOSJSON" %}
 Run the command as | json-pretty native (for example: show ip interface brief | json-pretty native), with a resulting JSON body like so:
 
 ```json
-{{ command_data.parsed_output }}
+{{ command_data.parsed_output|default('') }}
 ```
 
 {% endif %}
-{% if command_data.parser_used in [None, '', 'Regex'] %}
+{% if command_data.parser_used|default(none) in [None, '', 'Regex'] %}
 
 A RegEx Pattern exists for this show command, and results in data like so:
 You MUST use a RegEx Pattern (and Robot's Get Regexp Matches keyword) for this `{{ command_data.command }}` command. Pay attention to the Parsing Requirements.
 
 ```robotframework
-{% if command_data.genai_regex_pattern %}
+{% if command_data.genai_regex_pattern|default(none) %}
 {{ command_data.genai_regex_pattern }}
 {% else %}
 
@@ -54,7 +54,7 @@ You MUST use a RegEx Pattern (and Robot's Get Regexp Matches keyword) for this `
 Mocked Regex Data:
 
 ```json
-{% if command_data.parsed_output %}
+{% if command_data.parsed_output|default(none) %}
 {{ command_data.parsed_output }}
 {% else %}
 

@@ -43,6 +43,9 @@ docs = [
     "mkdocs-git-revision-date-localized-plugin>=1.2.0",
 ]
 
+[project.scripts]
+github-ops-manager = "github_ops_manager.configuration.cli:typer_app"
+
 [project.urls]
 "Homepage" = "https://github.com/aitestino/github-ops-manager.git"
 "Bug Tracker" = "https://github.com/aitestino/github-ops-manager.git/issues"
@@ -62,6 +65,8 @@ include = [
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = "test_*.py"
+python_functions = "test_*"
+norecursedirs = ["github_ops_manager", ".git", ".venv", "build", "dist"]
 asyncio_default_fixture_loop_scope = "function"
 markers = [
     "integration"
