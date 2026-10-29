@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Any
 
 import structlog
-from githubkit.versions.latest.models import Issue, PullRequest
+from githubkit_schemas.latest.models import Issue, PullRequest
 from jinja2 import Environment, FileSystemLoader, Template
 
 from github_ops_manager.github.adapter import GitHubKitAdapter

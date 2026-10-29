@@ -5,7 +5,7 @@ import time
 
 import jinja2
 import structlog
-from githubkit.versions.latest.models import Issue
+from githubkit_schemas.latest.models import Issue
 
 from github_ops_manager.github.adapter import GitHubKitAdapter
 from github_ops_manager.schemas.default_issue import IssueModel, IssuesYAMLModel

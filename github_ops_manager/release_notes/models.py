@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Dict, List, Protocol
 
-from githubkit.versions.latest.models import PullRequest, Release
+from githubkit_schemas.latest.models import PullRequest, Release
 from pydantic import BaseModel
 
 

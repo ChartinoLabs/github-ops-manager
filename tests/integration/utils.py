@@ -8,7 +8,7 @@ import uuid
 from pathlib import Path
 from typing import Callable
 
-from githubkit.versions.latest.models import Issue
+from githubkit_schemas.latest.models import Issue
 
 from github_ops_manager.github.adapter import GitHubKitAdapter
 from github_ops_manager.utils.yaml import dump_yaml_to_file

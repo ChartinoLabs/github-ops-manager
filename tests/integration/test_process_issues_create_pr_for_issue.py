@@ -6,7 +6,7 @@ import tempfile
 import uuid
 
 import pytest
-from githubkit.versions.latest.models import PullRequest
+from githubkit_schemas.latest.models import PullRequest
 
 from github_ops_manager.github.adapter import GitHubKitAdapter
 from tests.integration.utils import (

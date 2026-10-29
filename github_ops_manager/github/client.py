@@ -11,7 +11,7 @@ from githubkit.auth import (
     AppInstallationAuthStrategy,
     TokenAuthStrategy,
 )
-from githubkit.versions.latest.models import Installation
+from githubkit_schemas.latest.models import Installation
 
 from github_ops_manager.configuration.models import GitHubAuthenticationType
 from github_ops_manager.utils.github import split_repository_in_configuration

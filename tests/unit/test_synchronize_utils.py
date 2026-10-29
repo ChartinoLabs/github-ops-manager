@@ -3,7 +3,7 @@
 from unittest.mock import MagicMock
 
 import pytest
-from githubkit.versions.latest.models import IssuePropLabelsItemsOneof1, Label
+from githubkit_schemas.latest.models import IssuePropLabelsItemsOneof1, Label
 
 from github_ops_manager.synchronize.models import SyncDecision
 from github_ops_manager.synchronize.utils import compare_github_field, compare_label_sets, extract_label_names, value_is_noney

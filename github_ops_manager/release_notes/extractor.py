@@ -4,7 +4,7 @@ import re
 from typing import Any, Dict, List, Tuple
 
 import structlog
-from githubkit.versions.latest.models import Release
+from githubkit_schemas.latest.models import Release
 
 from ..github.adapter import GitHubKitAdapter
 from ..utils.constants import COMMIT_SHA_PATTERN, PR_REFERENCE_PATTERN

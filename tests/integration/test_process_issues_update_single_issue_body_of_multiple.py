@@ -5,7 +5,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
-from githubkit.versions.latest.models import Issue
+from githubkit_schemas.latest.models import Issue
 
 from github_ops_manager.utils.yaml import dump_yaml_to_file
 from tests.integration.utils import (

@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 import structlog
-from githubkit.versions.latest.models import PullRequest
+from githubkit_schemas.latest.models import PullRequest
 from ruamel.yaml import YAML
 
 logger: structlog.stdlib.BoundLogger = structlog.get_logger(__name__)
