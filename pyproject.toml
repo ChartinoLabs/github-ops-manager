@@ -22,7 +22,12 @@ dependencies = [
     "pydantic>=2.11,<3.0", # For data modeling (output UC schema)
     "pydantic-settings>=2.10.0,<3.0", # For loading config from .env/env vars
     "structlog~=25.2.0", # For structured logging
-    "githubkit>=0.12.12",
+    # 0.16 moved the generated models out of githubkit into githubkit-schemas; the old
+    # githubkit.versions.latest path survives only as a deprecated alias.
+    "githubkit>=0.16",
+    # Imported directly (githubkit_schemas.latest.models), so declared directly rather than
+    # relied on through githubkit. 26.6.7 is its first release.
+    "githubkit-schemas>=26.6.7",
     "jinja2>=3.1.6",
     "packaging>=25.0",
 ]

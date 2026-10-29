@@ -8,7 +8,7 @@ from typing import Any, Awaitable, Callable, Literal, Self, TypeVar
 import structlog
 from githubkit import Response
 from githubkit.exception import RequestFailed
-from githubkit.versions.latest.models import (
+from githubkit_schemas.latest.models import (
     FullRepository,
     Issue,
     Label,

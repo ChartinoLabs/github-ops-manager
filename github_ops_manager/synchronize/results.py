@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from githubkit.versions.latest.models import Issue
+from githubkit_schemas.latest.models import Issue
 
 from github_ops_manager.schemas.default_issue import IssueModel
 from github_ops_manager.synchronize.models import SyncDecision

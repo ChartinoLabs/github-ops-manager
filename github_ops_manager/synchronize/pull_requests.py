@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any
 
 import structlog
-from githubkit.versions.latest.models import Issue, PullRequest
+from githubkit_schemas.latest.models import Issue, PullRequest
 from structlog.contextvars import bound_contextvars
 
 from github_ops_manager.github.adapter import GitHubKitAdapter

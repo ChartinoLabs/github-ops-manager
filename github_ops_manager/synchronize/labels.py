@@ -1,7 +1,7 @@
 """Contains synchronization logic for GitHub labels."""
 
 import structlog
-from githubkit.versions.latest.models import Label
+from githubkit_schemas.latest.models import Label
 
 from github_ops_manager.schemas.default_issue import LabelModel
 from github_ops_manager.synchronize.models import SyncDecision

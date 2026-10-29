@@ -7,7 +7,7 @@ import tempfile
 import uuid
 
 import pytest
-from githubkit.versions.latest.models import PullRequest
+from githubkit_schemas.latest.models import PullRequest
 
 from tests.integration.utils import (
     _close_issues_by_title,
